@@ -1,0 +1,33 @@
+project_name = 'test_alive'
+
+test_alive	= [
+	'test_alive.c',		\
+	'alive.c',		\
+	'../../test/test.c',	\
+]
+
+#libs = ['scalp', 'nanoK']
+#libpath = ['scalp', 'nanoK']
+
+#SConscript(['./scalp/SConscript', './nanoK/SConscript'])
+
+optimize        = '-O2 '
+includes	= ['.', './scalp', './nanoK', './test']
+cflags		= '-g -Wall ' + optimize
+ldflags		= '-g -Wall ' + optimize
+
+env = Environment(
+	CC = 'gcc',		\
+	AR = 'ar',		\
+	CFLAGS = cflags,	\
+	CPPPATH = includes,	\
+	LINKFLAGS = ldflags,	\
+)
+
+#default = env.Program(project_name, test_alive, LIBS = libs, LIBPATH = libpath)
+default = env.Program(project_name, test_alive)
+env.Default(default)
+
+# suppress reliquat files
+env.Alias('clean', '', 'rm -f *~ *o test_alive */*.o */*.a')
+env.AlwaysBuild('clean')
