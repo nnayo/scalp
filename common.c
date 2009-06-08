@@ -16,20 +16,32 @@
 
 #define OUT_SIZE	3
 
-#define LED_GREEN_ON()		( PORTA |= _BV(2) )
-#define LED_GREEN_OFF()		( PORTA &= ~_BV(2) )
-#define LED_GREEN_ACTIVE()	( DDRA |= _BV(2) )
-#define LED_GREEN_PASSIVE()	( DDRA &= ~_BV(2) )
+#define LED_PORT		PORTA
+#define LED_DDR			DDRA
+#define GREEN_LED		_BV(PA2)
+#define ORANGE_LED		_BV(PA1)
+#define RED_LED			_BV(PA0)
 
-#define LED_ORANGE_ON()		( PORTA |= _BV(1) )
-#define LED_ORANGE_OFF()	( PORTA &= ~_BV(1) )
-#define LED_ORANGE_ACTIVE()	( DDRA |= _BV(1) )
-#define LED_ORANGE_PASSIVE()	( DDRA &= ~_BV(1) )
+#define LED_STEP		(200 * TIME_1_MSEC)
+#define GREEN_BOTTOM	0
+#define GREEN_TOP		LED_STEP
+#define ORANGE_BOTTOM	GREEN_TOP
+#define ORANGE_TOP		(ORANGE_BOTTOM + LED_STEP)
+#define RED_BOTTOM		ORANGE_TOP
+#define RED_TOP			(RED_BOTTOM + LED_STEP)
 
-#define LED_RED_ON()		( PORTA |= _BV(0) )
-#define LED_RED_OFF()		( PORTA &= ~_BV(0) )
-#define LED_RED_ACTIVE()	( DDRA |= _BV(0) )
-#define LED_RED_PASSIVE()	( DDRA &= ~_BV(0) )
+
+//--------------------------------------------
+// private structures
+//
+
+typedef struct {
+	u8 led;
+	u32 pseudo_period;
+	u32 top;
+	u32 bottom;
+} blink_t;
+
 
 
 //----------------------------------------
@@ -39,12 +51,15 @@
 static struct {
 	dpt_interface_t interf;		// dispatcher interface
 
-	pt_t pt_rx;			// reception thread context
-	pt_t pt_tx;			// emission thread context
+	pt_t pt_rx;					// reception thread context
+	pt_t pt_tx;					// emission thread context
+	pt_t pt_blink;				// leds blinking thread context
 
 	u32 green_led_period;		// green led blinking period
 	u32 orange_led_period;		// orange led blinking period
-	u32 red_led_period;		// red led blinking period
+	u32 red_led_period;			// red led blinking period
+
+	u32 time;
 
 	// outgoing fifo
 	fifo_t out;
@@ -56,9 +71,9 @@ static struct {
 
 	// incoming handling variables
 	dpt_frame_t fr_in;			// a buffer frame
-	volatile u8 rxed;		// flag set to OK when frame is rxed
+	volatile u8 rxed;			// flag set to OK when frame is rxed
 
-	cmn_state_t state;		// board state
+	cmn_state_t state;			// board state
 	cmn_bus_state_t bus;		// bus state
 } CMN;
 
@@ -66,6 +81,22 @@ static struct {
 //----------------------------------------
 // private functions
 //
+
+void blink_led(blink_t* const b)
+{
+	u32 modulo = CMN.time % b->pseudo_period;
+
+	// led is ON between BOTTOM and TOP
+	if ( (modulo >= b->bottom) && (modulo < b->top) ) {
+		// led ON
+		LED_PORT |= b->led;
+	}
+	else {
+		// led off
+		LED_PORT &= ~b->led;
+	}
+}
+
 
 static PT_THREAD( CMN_tx(pt_t* pt) )
 {
@@ -194,6 +225,106 @@ static PT_THREAD( CMN_rx(pt_t* pt) )
 }
 
 
+static PT_THREAD( CMN_blink(pt_t* pt) )
+{
+	blink_t b;
+
+	PT_BEGIN(pt);
+
+	PT_WAIT_UNTIL(pt, CMN.time + 250 * TIME_1_MSEC < TIME_get());
+
+	// get current time
+	CMN.time += 250 * TIME_1_MSEC;
+
+	// led blinking periods depend on the flight phase
+	switch (CMN.state) {
+		case READY:
+			CMN.green_led_period = 2 * TIME_1_SEC;
+			CMN.orange_led_period = TIME_MAX;
+			CMN.red_led_period = TIME_MAX;
+			break;
+
+		case WAIT_TAKE_OFF:
+			CMN.green_led_period = 500 * TIME_1_MSEC;
+			CMN.orange_led_period = TIME_MAX;
+			CMN.red_led_period = TIME_MAX;
+			break;
+
+		case WAIT_TAKE_OFF_CONF:
+			CMN.green_led_period = TIME_MAX;
+			CMN.orange_led_period = 500 * TIME_1_MSEC;
+			CMN.red_led_period = TIME_MAX;
+			break;
+
+		case FLYING:
+			CMN.green_led_period = TIME_MAX;
+			CMN.orange_led_period = 1 * TIME_1_SEC;
+			CMN.red_led_period = TIME_MAX;
+			break;
+
+		case WAIT_DOOR_OPEN:
+			CMN.green_led_period = TIME_MAX;
+			CMN.orange_led_period = 250 * TIME_1_MSEC;
+			CMN.red_led_period = TIME_MAX;
+			break;
+
+		case RECOVERY:
+			CMN.green_led_period = TIME_MAX;
+			CMN.orange_led_period = TIME_MAX;
+			CMN.red_led_period = 2 * TIME_1_SEC;
+			break;
+
+		case BUZZER:
+			CMN.green_led_period = TIME_MAX;
+			CMN.orange_led_period = TIME_MAX;
+			CMN.red_led_period = 250 * TIME_1_MSEC;
+			break;
+
+		case DOOR_OPENING:
+			CMN.green_led_period = TIME_MAX;
+			CMN.orange_led_period = TIME_MAX;
+			CMN.red_led_period = TIME_MAX;
+			break;
+
+		case DOOR_OPEN:
+			CMN.green_led_period = TIME_MAX;
+			CMN.orange_led_period = TIME_MAX;
+			CMN.red_led_period = TIME_MAX;
+			break;
+
+		case DOOR_CLOSING:
+			CMN.green_led_period = TIME_MAX;
+			CMN.orange_led_period = TIME_MAX;
+			CMN.red_led_period = TIME_MAX;
+			break;
+	}
+
+	b.led = GREEN_LED;
+	b.pseudo_period = CMN.green_led_period;
+	b.top = GREEN_TOP;
+	b.bottom = GREEN_BOTTOM;
+	blink_led(&b);
+	PT_YIELD(pt);
+
+	b.led = ORANGE_LED;
+	b.pseudo_period = CMN.orange_led_period;
+	b.top = ORANGE_TOP;
+	b.bottom = ORANGE_BOTTOM;
+	blink_led(&b);
+	PT_YIELD(pt);
+
+	b.led = RED_LED;
+	b.pseudo_period = CMN.red_led_period;
+	b.top = RED_TOP;
+	b.bottom = RED_BOTTOM;
+	blink_led(&b);
+
+	PT_RESTART(pt);
+
+	PT_END(pt);
+}
+
+
 static void CMN_dpt_rx(dpt_frame_t* fr)
 {
 	// if frame is a response
@@ -226,11 +357,16 @@ void CMN_init(void)
 	// thread context init
 	PT_INIT(&CMN.pt_rx);
 	PT_INIT(&CMN.pt_tx);
+	PT_INIT(&CMN.pt_blink);
 
 	// variables init
 	CMN.rxed = KO;
 	CMN.state = READY;
 	CMN.bus = NONE;
+	CMN.green_led_period = TIME_MAX;
+	CMN.orange_led_period = TIME_MAX;
+	CMN.red_led_period = TIME_MAX;
+	CMN.time = 0;
 
 	// register own call-back for specific commands
 	CMN.interf.channel = 3;
@@ -239,9 +375,7 @@ void CMN_init(void)
 	DPT_register(&CMN.interf);
 
 	// set led port direction
-	LED_GREEN_ACTIVE();
-	LED_ORANGE_ACTIVE();
-	LED_RED_ACTIVE();
+	LED_DDR |= GREEN_LED | ORANGE_LED | RED_LED;
 
 	// set I2C cmde direction and force the I2C bus low
 	DDRA |= _BV(PA7);
@@ -252,82 +386,12 @@ void CMN_init(void)
 // common module run method
 void CMN_run(void)
 {
-	u32 time;
-
 	// send response if any
 	(void)PT_SCHEDULE(CMN_tx(&CMN.pt_tx));
 
 	// handle command if any
 	(void)PT_SCHEDULE(CMN_rx(&CMN.pt_rx));
 
-	// get current time
-	time = TIME_get();
-
-	// by default, block every blinking
-	CMN.green_led_period = TIME_MAX;
-	CMN.orange_led_period = TIME_MAX;
-	CMN.red_led_period = TIME_MAX;
-	
-	switch (CMN.state) {
-		case READY:
-			CMN.green_led_period = 2 * TIME_1_SEC;
-			break;
-
-		case WAIT_TAKE_OFF:
-			CMN.green_led_period = 500 * TIME_1_MSEC;
-			break;
-
-		case WAIT_TAKE_OFF_CONF:
-			CMN.orange_led_period = 500 * TIME_1_MSEC;
-			break;
-
-		case FLYING:
-			CMN.orange_led_period = 1 * TIME_1_SEC;
-			break;
-
-		case WAIT_DOOR_OPEN:
-			CMN.orange_led_period = 250 * TIME_1_MSEC;
-			break;
-
-		case RECOVERY:
-			CMN.red_led_period = 2 * TIME_1_SEC;
-			break;
-
-		case BUZZER:
-			CMN.red_led_period = 250 * TIME_1_MSEC;
-			break;
-
-		case DOOR_OPENING:
-			break;
-
-		case DOOR_OPEN:
-			break;
-
-		case DOOR_CLOSING:
-			break;
-	}
-
-	// led is ON during second half of the period
-	if ( (time % CMN.green_led_period) > (CMN.green_led_period / 2) ) {
-		LED_GREEN_ON();
-	}
-	else {
-		LED_GREEN_OFF();
-	}
-
-	// led is ON during second half of the period
-	if ( (time % CMN.orange_led_period) > (CMN.orange_led_period / 2) ) {
-		LED_ORANGE_ON();
-	}
-	else {
-		LED_ORANGE_OFF();
-	}
-
-	// led is ON during second half of the period
-	if ( (time % CMN.red_led_period) > (CMN.red_led_period / 2) ) {
-		LED_RED_ON();
-	}
-	else {
-		LED_RED_OFF();
-	}
+	// blink the leds
+	(void)PT_SCHEDULE(CMN_blink(&CMN.pt_blink));
 }
