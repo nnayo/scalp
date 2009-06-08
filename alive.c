@@ -25,15 +25,17 @@
 static struct {
 	dpt_interface_t interf;		// dispatcher interface
 
-	pt_t pt;			// thread context
+	pt_t pt;					// thread context
 
-	dpt_frame_t fr;			// a buffer frame
+	dpt_frame_t fr;				// a buffer frame
 
-	u8 anti_bounce;			// anti-bounce counter
+	u8 anti_bounce;				// anti-bounce counter
 
-	u8 nb_mnt;			// number of other found minuteries
-	u8 mnt_addr[2];			// addresses of the other minuteries
-	u8 cur_mnt;			// current minuterie index
+	u8 nb_mnt;					// number of other found minuteries
+	u8 mnt_addr[2];				// addresses of the other minuteries
+	u8 cur_mnt;					// current minuterie index
+
+	u32 time_out;				// time-out for scan request sending
 } ALV;
 
 
@@ -131,7 +133,10 @@ static PT_THREAD( ALV_pt(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// every second
-	PT_WAIT_UNTIL(pt, (TIME_get() % ALV_TIME_INTERVAL) == 0);
+	PT_WAIT_UNTIL(pt, TIME_get() > ALV.time_out);
+
+	// update time-out
+	ALV.time_out += ALV_TIME_INTERVAL;
 
 	// extract visible other minuteries addresses
 	self_addr = ALV_nodes_addresses();
@@ -160,7 +165,7 @@ static PT_THREAD( ALV_pt(pt_t* pt) )
 		ALV.fr.nat = 0;
 		ALV.fr.cmde = FR_RECONF_FORCE_MODE;
 		ALV.fr.argv[0] = 0x00;
-		ALV.fr.argv[0] = 0x02;
+		ALV.fr.argv[1] = 0x02;
 
 		DPT_lock(&ALV.interf);
 		PT_WAIT_UNTIL(pt, OK == DPT_tx(&ALV.interf, &ALV.fr));
@@ -191,6 +196,7 @@ void ALV_init(void)
 	ALV.anti_bounce = 0;
 	ALV.nb_mnt = 0;
 	ALV.cur_mnt = 0;
+	ALV.time_out = ALV_TIME_INTERVAL;
 
 	// register own call-back for specific commands
 	ALV.interf.channel = 9;
