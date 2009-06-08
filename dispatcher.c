@@ -23,16 +23,16 @@
 
 static struct {
 	dpt_interface_t* channels[DPT_CHAN_NB];	// available channels
-	u8 lock;				// lock bitfield
+	u16 lock;								// lock bitfield
 
-	u8 sl_addr;				// own I2C slave address
-	volatile u8 txed;			// flag telling whether the frame is sent
-	u32 time_out;				// tx time-out time
+	u8 sl_addr;								// own I2C slave address
+	volatile u8 txed;						// flag telling whether the frame is sent
+	u32 time_out;							// tx time-out time
 
-	dpt_frame_t out;			// out going frame buffer
-	dpt_frame_t in;				// incoming frame buffer
+	dpt_frame_t out;						// out going frame buffer
+	dpt_frame_t in;							// incoming frame buffer
 
-	u8 t_id;				// current transaction id value
+	u8 t_id;								// current transaction id value
 } DPT;
 
 
@@ -316,7 +316,7 @@ u8 DPT_tx(dpt_interface_t* interf, dpt_frame_t* fr)
 	}
 
 	// if the sender didn't lock the channel
-	if (  !(DPT.lock & (1 << interf->channel)) ) {
+	if ( !(DPT.lock & (1 << interf->channel)) ) {
 		// it can't send the frame
 		return KO;
 	}
