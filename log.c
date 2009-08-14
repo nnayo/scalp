@@ -6,6 +6,8 @@
 #include "utils/fifo.h"
 #include "utils/time.h"
 
+#include "avr/io.h"
+
 
 //----------------------------------------
 // private defines
@@ -13,17 +15,19 @@
 
 #define NB_FRAMES	10
 
+#define MINIMAL_FILTER	_CM(FR_EEP_READ) | _CM(FR_EEP_WRITE) | _CM(FR_LOG_CMD)
+
 
 //----------------------------------------
 // private defines
 //
 
 typedef struct {
-	u8	index:4;	// log index (unique for each log session)
-	u8	orig:4;		// i2c origin address
-	u8	cmde;		// frame cmde
-	u8	time[2];	// middle octets of the TIME (2.56 ms resol / 46.6 h scale)
-	u8	argv[3];	// only the first 3 argv are logged (the most significant)
+	u8	index:4;		// log index (unique for each log session)
+	u8	orig:4;			// i2c origin address
+	u8	time[2];		// middle octets of the TIME (2.56 ms resol / 46.6 h scale)
+	u8	cmde;			// frame cmde
+	u8	argv[DPT_ARGC - 1];	// and its first parameters
 } log_t;
 
 
@@ -33,26 +37,101 @@ typedef struct {
 
 static struct {
 	dpt_interface_t interf;		// dispatcher interface
-	pt_t	pt;			// context
-	pt_t	pt2;			// spawn context
-	pt_t	pt3;			// spawn context
+	pt_t	pt;					// context
+	pt_t	pt2;				// spawn context
+	pt_t	pt3;				// spawn context
 
-	fifo_t	fifo;			// fifo
+	fifo_t	fifo;				// fifo
 	dpt_frame_t buf[NB_FRAMES];	// data fifo buffer
 
-	dpt_frame_t fr_in;		// incoming frame
-	dpt_frame_t fr_out;		// outgoing frame
+	dpt_frame_t fr_in;			// incoming frame
+	dpt_frame_t fr_out;			// outgoing frame
 	dpt_frame_t fr_filter;		// filtered frame 
 
-	u16	addr;			// address in eeprom
-	u8	index;			// session index
-	volatile u8 rxed;		// flag for signaling incoming frame
+	u8 enable;					// logging state
+
+	u16	addr;					// address in eeprom
+	u8	index;					// session index
+	volatile u8 rxed;			// flag for signaling incoming frame
 } LOG;
 
 
 //----------------------------------------
 // private functions
 //
+
+static void LOG_command(dpt_frame_t* fr)
+{
+	u32 filter;
+
+	// upon the sub-command
+	switch ( fr->argv[0] ) {
+	case 0x00:	// off
+		LOG.enable = FALSE;
+		break;
+
+	case 0xff:	// ON
+		LOG.enable = TRUE;
+		break;
+
+	case 0xa1:	// AND filter MSB value with current MSB value
+		filter = LOG.interf.cmde_mask;
+		filter &= (u32)fr->argv[1] << 24;
+		filter &= (u32)fr->argv[2] << 16;
+
+		// preserve the logging basic communication
+		filter |= MINIMAL_FILTER;
+
+		// set the new filter value
+		LOG.interf.cmde_mask = filter;
+		break;
+
+	case 0xa0:	// AND filter LSB value with current LSB value
+		filter = LOG.interf.cmde_mask;
+		filter &= (u32)fr->argv[1] << 8;
+		filter &= (u32)fr->argv[2] << 0;
+
+		// preserve the logging basic communication
+		filter |= MINIMAL_FILTER;
+
+		// set the new filter value
+		LOG.interf.cmde_mask = filter;
+		break;
+
+	case 0x51:	// OR filter MSB value with current MSB value
+		filter = LOG.interf.cmde_mask;
+		filter |= (u32)fr->argv[1] << 24;
+		filter |= (u32)fr->argv[2] << 16;
+
+		// preserve the logging basic communication
+		filter |= MINIMAL_FILTER;
+
+		// set the new filter value
+		LOG.interf.cmde_mask = filter;
+		break;
+
+	case 0x50:	// OR filter LSB value with current LSB value
+		filter = LOG.interf.cmde_mask;
+		filter |= (u32)fr->argv[1] << 8;
+		filter |= (u32)fr->argv[2] << 0;
+
+		// preserve the logging basic communication
+		filter |= MINIMAL_FILTER;
+
+		// set the new filter value
+		LOG.interf.cmde_mask = filter;
+		break;
+
+	default:
+		// unknown sub-command
+		fr->error = 1;
+		break;
+	}
+
+	// set response bit
+	fr->resp = 1;
+}
+
 
 static PT_THREAD( LOG_write(pt_t* pt) )
 {
@@ -137,6 +216,24 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 	// wait while no frame is present in the fifo
 	PT_WAIT_WHILE(pt, KO == FIFO_get(&LOG.fifo, &LOG.fr_filter));
 
+	// if it is a log command
+	if ( (LOG.fr_filter.cmde == FR_LOG_CMD) && (!LOG.fr_filter.resp) ) {
+		// treat it
+		LOG_command(&LOG.fr_filter);
+
+		// send the response
+		PT_WAIT_UNTIL(pt, OK == DPT_tx(&LOG.interf, &LOG.fr_filter));
+
+		// and wait till the next frame
+		PT_RESTART(pt);
+	}
+
+	// if logging is disabled
+	if ( !LOG.enable ) {
+		// wait till the next frame
+		PT_RESTART(pt);
+	}
+
 	// the log packet will be sent by pieces of 2 octets
 	// the header remains the same for all writes
 	LOG.fr_out.dest = DPT_SELF_ADDR;
@@ -202,15 +299,12 @@ static void LOG_rx(dpt_frame_t* fr)
 	// only some frames are interessing
 	//
 	// so they have to be filtered
-	// right now, the ones to keep are :
-	// - status change
-	// - take-off
-	// - power change
 	//
 	// but during the search for the log start,
 	// eeprom read response frames must received and treated
 	addr = fr->argv[0] << 8;
 	addr += fr->argv[1] << 0;
+
 	//if ( ( (fr->cmde & (FR_RESP|FR_EEP_READ)) == (FR_RESP|FR_EEP_READ) )
 	if ( (fr->cmde == FR_EEP_READ) && fr->resp && (LOG.addr == addr) ) {
 		// store and signal it
@@ -233,18 +327,9 @@ static void LOG_rx(dpt_frame_t* fr)
 		return;
 	}
 
-	// filter the frame
-	switch (fr->cmde) {
-		case FR_STATE:
-		case FR_MINUT_TAKE_OFF:
-		case FR_SURV_PWR_CMD:
-			// enqueue the frame
-			FIFO_put(&LOG.fifo, fr);
-			break;
-
-		default:
-			break;
-	}
+	// remaining frames are to enqueued
+	// as the dispatcher is the filter
+	FIFO_put(&LOG.fifo, fr);
 }
 
 
@@ -267,9 +352,11 @@ void LOG_init(void)
 	// while the begin the log is not found,
 	// no event shall be logged
 	LOG.interf.channel = 6;
-	LOG.interf.cmde_mask = _CM(FR_EEP_READ) | _CM(FR_EEP_WRITE);
+	LOG.interf.cmde_mask = MINIMAL_FILTER;
 	LOG.interf.rx = LOG_rx;
 	DPT_register(&LOG.interf);
+
+	LOG.enable = FALSE;
 }
 
 
@@ -290,7 +377,8 @@ u8 LOG_run(void)
 				| _CM(FR_RECONF_FORCE_MODE)
 				| _CM(FR_MINUT_TAKE_OFF)
 				| _CM(FR_MINUT_DOOR_CMD)
-				| _CM(FR_SURV_PWR_CMD);
+				| _CM(FR_SURV_PWR_CMD)
+				| MINIMAL_FILTER;
 	PT_SPAWN(&LOG.pt, &LOG.pt2, LOG_log(&LOG.pt2));
 
 	DPT_unlock(&LOG.interf);
