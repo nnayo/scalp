@@ -33,7 +33,7 @@
 // configuration defines
 //
 
-#define START_ADDR	155	// the place before is reserved for event frames
+#define START_ADDR	155		// the place before is reserved for event frames
 #define END_ADDR	1024	// end of eeprom memory
 
 
