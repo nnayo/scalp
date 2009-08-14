@@ -78,9 +78,14 @@ typedef enum {
 
 	FR_CONTAINER,				// 0x0a : encapsulated several other frames used for event handling
 	// argv #0, #1 value :
-	// 	- offset in EEPROM for the first encapsulated frame (MSB first)
+	// 	- offset in memory for the first encapsulated frame (MSB first)
 	// argv #2 value :
 	// 	- 0xVV : nb encapsulated frames
+	// argv #3 memory type or container number in eeprom: 
+	//  - 0xee eeprom, 
+	//  - 0xff flash, 
+	//  - 0xaa ram, 
+	//  - 0x00-0x05 : predefined eeprom container (in this case the other parameters are useless)
 
 	// ---------------------------------
 	// DNA commands
@@ -172,9 +177,13 @@ typedef enum {
 	FR_MINUT_TAKE_OFF,			// 0x12 : take-off detected
 	// no arg
 
-	FR_MINUT_THRES,				// 0x13 : take-off detection threshold
+	FR_MINUT_THRES,				// 0x13 : take-off detection threshold and buzzer config
 	// argv #0 value :
 	// 	- take-off threshold duration in *10 ms (0 -> 2550 ms)
+	// argv #1 value :
+	// 	- buzzer off gap time in *1 s (0 -> 255 s)
+	// argv #2 value :
+	// 	- buzzer on time in *1 s (0 -> 255 s)
 
 	FR_MINUT_OPEN_TIME,			// 0x14 : save/read culmination time
 	// argv #0 value :
@@ -232,6 +241,20 @@ typedef enum {
 	// 	- other : ignored
 
 
+	FR_LOG_CMD,					// 0x1a : modify logging setup
+	// argv #0 value :
+	// 	- 0x00 : off
+	// 	- 0xff : ON
+	// 	- 0xa1 : AND filter MSB value with current MSB value
+	// 	- 0xa0 : AND filter LSB value with current LSB value
+	// 	- 0x51 : OR filter MSB value with current MSB value
+	// 	- 0x50 : OR filter LSB value with current LSB value
+	// argv #1 value :
+	//  - 0xVV : MSB part of the filter
+	// argv #2 value :
+	//  - 0xVV : LSB part of the filter
+
+
 	// ---------------------------------
 	// various masks and bits
 	//
@@ -242,5 +265,12 @@ typedef enum {
 	//FR_RESP		= 0x80,			// response bit
 
 } fr_cmdes_t;
+
+
+// memory storage types for container frame
+#define EEPROM_STORAGE	0xee
+#define RAM_STORAGE		0xaa
+#define FLASH_STORAGE	0xff
+
 
 #endif	// __FRAMES_H__
