@@ -79,6 +79,9 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 	//(void)nb_data;
 	(void)misc;
 
+	// reset tx time-out because the driver is signalling an event
+	DPT.time_out = TIME_MAX;
+
 	// upon the state
 	switch(state) {
 		case TWI_NO_SL:
@@ -89,6 +92,7 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 			DPT.in.dest = DPT.sl_addr;
 			DPT.in.orig = DPT.out.orig;
 			DPT.in.cmde = DPT.out.cmde;
+			DPT.in.t_id = DPT.out.t_id;
 			DPT.in.nat = DPT.out.nat;
 			DPT.in.resp = 1;
 			DPT.in.error = 1;
@@ -112,6 +116,7 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 			// fill header
 			DPT.in.dest = DPT_SELF_ADDR;
 			DPT.in.orig = DPT.out.dest;
+			DPT.in.t_id = DPT.out.t_id;
 			DPT.in.cmde = DPT.out.cmde;
 			DPT.in.nat = DPT.out.nat;
 			DPT.in.resp = 1;
@@ -186,19 +191,17 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 			// error or time-out state
 			DPT.in.dest = DPT.sl_addr;
 			DPT.in.orig = DPT.out.orig;
+			DPT.in.t_id = DPT.out.t_id;
 			DPT.in.cmde = DPT.out.cmde;
+			DPT.in.nat = DPT.out.nat;
 			DPT.in.resp = 1;
 			DPT.in.error = 1;
-			DPT.in.nat = DPT.out.nat;
 
 			// dispatch the response
 			DPT_dispatch(&DPT.in);
 
 			// sending is over
 			DPT.txed = OK;
-
-			// reset time-out
-			DPT.time_out = TIME_MAX;
 
 			// and release the bus
 			TWI_stop();
@@ -331,9 +334,6 @@ u8 DPT_tx(dpt_interface_t* interf, dpt_frame_t* fr)
 	// block other frame sending
 	DPT.txed = KO;
 
-	// save frame
-	DPT.out = *fr;
-
 	// if the frame is not a response
 	if ( !fr->resp ) {
 		// increment transaction id
@@ -342,6 +342,9 @@ u8 DPT_tx(dpt_interface_t* interf, dpt_frame_t* fr)
 		// and set it in the current frame
 		fr->t_id = DPT.t_id;
 	}
+
+	// save frame
+	DPT.out = *fr;
 
 	// if the frame destination is only local
 	if ( (fr->dest == DPT_SELF_ADDR)||(fr->dest == DPT.sl_addr) ) {
@@ -388,7 +391,9 @@ u8 DPT_tx(dpt_interface_t* interf, dpt_frame_t* fr)
 	}
 
 	// compute and save time-out limit
-	DPT.time_out = TIME_get() + 50 * TIME_1_MSEC;
+	// byte transmission is typically 100 us
+	// thus a security factor of 2 is used
+	DPT.time_out = TIME_get() + TIME_1_MSEC * sizeof(dpt_frame_t);
 
 	// transmission is started by hardware
 	// its end will be signalled by TWI driver
