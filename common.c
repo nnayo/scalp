@@ -132,6 +132,7 @@ static PT_THREAD( CMN_rx(pt_t* pt) )
 	// build default response frame header
 	CMN.fr_rsp.dest = CMN.fr_in.orig;
 	CMN.fr_rsp.orig = CMN.fr_in.dest;
+	CMN.fr_rsp.t_id = CMN.fr_in.t_id;
 	CMN.fr_rsp.resp = 1;
 	CMN.fr_rsp.error = 0;
 	CMN.fr_rsp.nat = CMN.fr_in.nat;
