@@ -46,10 +46,11 @@ static struct {
 //
 
 // frame handling
-static void BSC_frame_handling(dpt_frame_t* fr)
+//static void BSC_frame_handling(dpt_frame_t* fr)
+void BSC_frame_handling(dpt_frame_t* fr)
 {
 	u8 i;
-	dpt_frame_t resp;	// response frame
+	dpt_frame_t resp;		// response frame
 	dpt_frame_t cont_fr;	// contained frame
 	volatile u16* addr;
 	u16 data = 0;
@@ -142,21 +143,66 @@ static void BSC_frame_handling(dpt_frame_t* fr)
 			// even if this seems useless
 			// except perhaps for eeprom size optimization
 
-			// for each frame in the container
-			for ( i = 0; i < fr->argv[2]; i++) {
-				// extract the frame from EEPROM
-				eeprom_read_block(&cont_fr, (const void *)((u8*)addr + i * sizeof(dpt_frame_t)), sizeof(dpt_frame_t));
+			// upon the memory storage zone
+			switch (fr->argv[3]) {
+				case EEPROM_STORAGE:
+					// for each frame in the container
+					for ( i = 0; i < fr->argv[2]; i++) {
+						// extract the frames from EEPROM
+						eeprom_read_block(&cont_fr, (const void *)((u8*)addr + i * sizeof(dpt_frame_t)), sizeof(dpt_frame_t));
 
-				// enqueue the contained frame
-				FIFO_put(&BSC.fifo_out, &cont_fr);
-			}
+						// enqueue the contained frame
+						FIFO_put(&BSC.fifo_out, &cont_fr);
+					}
+					break;
+
+				case RAM_STORAGE:
+					// for each frame in the container
+					for ( i = 0; i < fr->argv[2]; i++) {
+						// read the frame from RAM
+						cont_fr = *((dpt_frame_t *)((u8*)addr + i * sizeof(dpt_frame_t)));
+
+						// enqueue the contained frame
+						FIFO_put(&BSC.fifo_out, &cont_fr);
+					}
+					break;
+
+				case FLASH_STORAGE:
+					// for each frame in the container
+					for ( i = 0; i < fr->argv[2]; i++) {
+						// extract the frame from FLASH
+						memcpy_P(&cont_fr, (const void *)((u8*)addr + i * sizeof(dpt_frame_t)), sizeof(dpt_frame_t));
+
+						// enqueue the contained frame
+						FIFO_put(&BSC.fifo_out, &cont_fr);
+					}
+					break;
+
+				case 0x00:
+				case 0x01:
+				case 0x02:
+				case 0x03:
+				case 0x04:
+				case 0x05:
+					// extract the frame from EEPROM
+					eeprom_read_block(&cont_fr, (const void *)((u8*)addr + fr->argv[3] * sizeof(dpt_frame_t)), sizeof(dpt_frame_t));
+
+					// enqueue the contained frame
+					FIFO_put(&BSC.fifo_out, &cont_fr);
+					break;
+
+				default:
+					// frame format is invalid
+					resp.error = 1;
+					break;
+				}
 
 			break;
 
 		default:
 			// should never happen
-			// but in case, sent back an error response frame
-			resp.error = 1;
+			// and in this case, ignore frame
+			return;
 			break;
 	}
 
@@ -279,7 +325,10 @@ void BSC_init(void)
 	eeprom_read_block(&fr, (const void *)0x00, sizeof(dpt_frame_t));
 
 	// enqueue the reset frame
-	BSC_rx(&fr);
+	FIFO_put(&BSC.fifo_out, &fr);
+
+	// lock the dispatcher to be able to treat the frame
+	DPT_lock(&BSC.interf);
 }
 
 
