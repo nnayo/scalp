@@ -41,6 +41,6 @@ extern void NAT_init(void);
 
 
 // NAT run method
-extern u8 NAT_run(void);
+extern void NAT_run(void);
 
 #endif	// __NAT_H__

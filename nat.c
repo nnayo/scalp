@@ -19,12 +19,14 @@
 
 static struct {
 	dpt_interface_t interf;		// dispatcher interface
-	pt_t pt;			// context
+	pt_t pt;					// context
 
-	dpt_frame_t twi;		// a buffer frame on twi side
-	dpt_frame_t tty;		// a buffer frame on tty side
+	dpt_frame_t twi;			// a buffer frame on twi side
+	dpt_frame_t tty;			// a buffer frame on tty side
 
-	u32 time_out;			// time-out in reception
+	u32 time_out;				// time-out in reception
+
+	u8 rxed;					// flag set on received frame
 } NAT;
 
 
@@ -32,24 +34,112 @@ static struct {
 // private functions
 //
 
+static PT_THREAD( NAT_tty_rx(pt_t* pt) )
+{
+	int c = EOF;
+
+	PT_BEGIN(&NAT.pt);
+
+	// read tty command
+	// first char (dest) can be awaited infinitively
+	PT_WAIT_WHILE(&NAT.pt, EOF == (c = getchar()) );
+	NAT.twi.dest = (u8)(c & 0xff);
+
+	// following char (orig) is subject of time-out
+	NAT.time_out = TIME_get() + 5 * TIME_1_MSEC;
+	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
+	if ( TIME_get() >= NAT.time_out )
+		PT_RESTART(&NAT.pt);
+
+	NAT.twi.orig = (u8)(c & 0xff);
+
+	// next char is also subject of time-out
+	NAT.time_out += 5 * TIME_1_MSEC;
+	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
+	NAT.twi.t_id = (u8)(c & 0xff);
+
+	// next char is also subject of time-out
+	NAT.time_out += 5 * TIME_1_MSEC;
+	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
+	if (c & 0x80)
+		NAT.twi.resp = 1;
+	else
+		NAT.twi.resp = 0;
+	if (c & 0x40)
+		NAT.twi.error = 1;
+	else
+		NAT.twi.error = 0;
+	NAT.twi.nat = 1;	// force NAT bit
+	NAT.twi.cmde = (u8)(c & 0x1f);
+
+	// next char is also subject of time-out
+	NAT.time_out += 5 * TIME_1_MSEC;
+	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
+	NAT.twi.argv[0] = (u8)(c & 0xff);
+
+	// next char is also subject of time-out
+	NAT.time_out += 5 * TIME_1_MSEC;
+	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
+	NAT.twi.argv[1] = (u8)(c & 0xff);
+
+	// next char is also subject of time-out
+	NAT.time_out += 5 * TIME_1_MSEC;
+	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
+	NAT.twi.argv[2] = (u8)(c & 0xff);
+
+	// next char is also subject of time-out
+	NAT.time_out += 5 * TIME_1_MSEC;
+	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
+	NAT.twi.argv[3] = (u8)(c & 0xff);
+
+	// send the command
+	DPT_lock(&NAT.interf);
+	PT_WAIT_WHILE(&NAT.pt, KO == DPT_tx(&NAT.interf, &NAT.twi));
+	DPT_unlock(&NAT.interf);
+
+	// loop back for processing next frame
+	PT_RESTART(&NAT.pt);
+
+	PT_END(&NAT.pt);
+}
+
+
+static void NAT_tty_tx(void)
+{
+	// prepare received frame by suppressing NAT bit
+	NAT.tty.nat = 0;
+
+	// enqueue the response
+	putchar(NAT.tty.dest);
+	putchar(NAT.tty.orig);
+	putchar(NAT.tty.t_id);
+	putchar( (NAT.tty.resp << 7) | (NAT.tty.error << 6) | (NAT.tty.nat << 5) | NAT.tty.cmde);
+	putchar(NAT.tty.argv[0]);
+	putchar(NAT.tty.argv[1]);
+	putchar(NAT.tty.argv[2]);
+	putchar(NAT.tty.argv[3]);
+}
+
+
 static void NAT_twi_rx(dpt_frame_t* fr)
 {
-	// if frame is a NAT response
-	//if ( (fr->cmde & (FR_NAT|FR_RESP)) == (FR_NAT|FR_RESP) ) {
-	if ( fr->nat && fr->resp ) {
-		// build tty response
-		NAT.tty = *fr;
-		//NAT.tty.cmde &= ~FR_NAT;	// suppress NAT bit
-		NAT.tty.nat = 0;	// suppress NAT bit
-		//printf("%7s", (char*)&NAT.tty);
-		putchar(NAT.tty.dest);
-		putchar(NAT.tty.orig);
-		putchar( (NAT.tty.resp << 7) | (NAT.tty.error << 6) | (NAT.tty.nat << 5) | NAT.tty.cmde);
-		putchar(NAT.tty.argv[0]);
-		putchar(NAT.tty.argv[1]);
-		putchar(NAT.tty.argv[2]);
-		putchar(NAT.tty.argv[3]);
+	// if NAT is not in reception state
+	if ( NAT.rxed != KO ) {
+		// ignore the frame
+		return;
 	}
+
+	// if frame is not a NAT response
+	if ( !(fr->nat && fr->resp) ) {
+		// ignore it
+		return;
+	}
+
+	// block any further reception
+	NAT.rxed = OK;
+
+	// save tty response
+	NAT.tty = *fr;
 }
 
 
@@ -63,8 +153,9 @@ void NAT_init(void)
 	// init context
 	PT_INIT(&NAT.pt);
 
-	// reset time-out
+	// reset state
 	NAT.time_out = 0;
+	NAT.rxed = KO;
 
 	// init serial link
 	RS_init(B4800);
@@ -78,63 +169,33 @@ void NAT_init(void)
 
 
 // NAT run method
-u8 NAT_run(void)
+void NAT_run(void)
 {
-	int c = EOF;
+	// handle the tty reception process
+	(void)PT_SCHEDULE(NAT_tty_rx(&NAT.pt));
 
-	PT_BEGIN(&NAT.pt);
+	// send back the frame
+	if ( NAT.rxed ) {
+		// if the error frame flag is set
+		if ( NAT.tty.error ) {
+			// if transaction id is same in command and response
+			if ( NAT.tty.t_id == NAT.twi.t_id ) {
+				// send it
+				NAT_tty_tx();
 
-	// read tty command
-	PT_WAIT_WHILE(&NAT.pt, EOF == (c = getchar()) );
-	NAT.twi.dest = (u8)(c & 0xff);
+				// modify received transaction id to prevent further sending
+				NAT.twi.t_id++;
+			}
+		}
+		else {
+			// if the received destination matches the source origin
+			if ( NAT.tty.dest == NAT.twi.orig ) {
+				// send it
+				NAT_tty_tx();
+			}
+		}
 
-	NAT.time_out = TIME_get() + 5 * TIME_1_MSEC;
-	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
-	if ( TIME_get() >= NAT.time_out )
-		PT_RESTART(&NAT.pt);
-
-	NAT.twi.orig = (u8)(c & 0xff);
-
-	NAT.time_out = TIME_get() + 5 * TIME_1_MSEC;
-	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
-	if (c & 0x80)
-		NAT.twi.resp = 1;
-	else
-		NAT.twi.resp = 0;
-	if (c & 0x40)
-		NAT.twi.error = 1;
-	else
-		NAT.twi.error = 0;
-	/*if (c & 0x20)
-		NAT.twi.nat = 1;
-	else
-		NAT.twi.nat = 0;*/
-	NAT.twi.nat = 1;	// add NAT bit
-	NAT.twi.cmde = (u8)(c & 0x1f);
-
-	NAT.time_out = TIME_get() + 5 * TIME_1_MSEC;
-	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
-	NAT.twi.argv[0] = (u8)(c & 0xff);
-
-	NAT.time_out = TIME_get() + 5 * TIME_1_MSEC;
-	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
-	NAT.twi.argv[1] = (u8)(c & 0xff);
-
-	NAT.time_out = TIME_get() + 5 * TIME_1_MSEC;
-	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
-	NAT.twi.argv[2] = (u8)(c & 0xff);
-
-	NAT.time_out = TIME_get() + 5 * TIME_1_MSEC;
-	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
-	NAT.twi.argv[3] = (u8)(c & 0xff);
-
-	// send the command
-	DPT_lock(&NAT.interf);
-	PT_WAIT_WHILE(&NAT.pt, KO == DPT_tx(&NAT.interf, &NAT.twi));
-	DPT_unlock(&NAT.interf);
-
-	// loop back for processing next frame
-	PT_RESTART(&NAT.pt);
-
-	PT_END(&NAT.pt);
+		// re-allow reception
+		NAT.rxed = KO;
+	}
 }
