@@ -155,8 +155,8 @@ static PT_THREAD( ALV_pt(pt_t* pt) )
 	PT_WAIT_UNTIL(pt, OK == DPT_tx(&ALV.interf, &ALV.fr));
 	DPT_unlock(&ALV.interf);
 
-	// check if the anti-bounve counter has reached its limit
-	if ( ALV.anti_bounce >= ALV_ANTI_BOUNCE_LIMIT ) {
+	// check if the anti-bounce counter has reached its limit
+	if ( ALV.anti_bounce > ALV_ANTI_BOUNCE_LIMIT ) {
 		// then set the mode to autonomous
 		ALV.fr.orig = DPT_SELF_ADDR;
 		ALV.fr.dest = DPT_SELF_ADDR;
