@@ -27,6 +27,7 @@ static struct {
 	dpt_frame_t fr;			// a buffer frame
 	volatile u8 rxed;		// flag set to OK when frame is rxed
 
+	u32 time_out;
 	s8 time_correction;
 } TSN;
 
@@ -68,7 +69,8 @@ static PT_THREAD( TSN_pt(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// every second
-	PT_WAIT_UNTIL(pt, (TIME_get() % TIME_1_SEC) == 0);
+	PT_WAIT_UNTIL(pt, TIME_get() > TSN.time_out);
+	TSN.time_out += TIME_1_SEC;
 
 	// retrieve self and BC node address
 	list = DNA_list(&nb_is, &nb_bs);
@@ -137,6 +139,7 @@ void TSN_init(void)
 	// variables init
 	TSN.rxed = KO;
 	TSN.time_correction = 0;
+	TSN.time_out = TIME_1_SEC;
 	TIME_set_incr(10 * TIME_1_MSEC);
 
 	// register own call-back for specific commands
