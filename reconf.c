@@ -55,6 +55,8 @@ typedef enum {
 //
 
 static struct {
+	pt_t pt;					// protothread context
+
 	bus_t bus_force_mode;		// force bus mode
 
 	bus_t bus_curr_stat;		// current bus status
@@ -62,10 +64,8 @@ static struct {
 
 	dpt_interface_t interf;		// dispatcher interface
 
-	dpt_frame_t out;		// outgoing buffer frame
-	dpt_frame_t in;			// incoming buffer frame
-
-	pt_t pt;			// protothread context
+	dpt_frame_t out;			// outgoing buffer frame
+	dpt_frame_t in;				// incoming buffer frame
 } RCF;
 
 
@@ -83,12 +83,6 @@ static struct {
 // nominal bus is dominant on redundant
 dpt_frame_t* RCF_scan_bus(void)
 {
-#if 0
-	void* addr;
-#else
-	u16 addr;
-#endif
-
 	// by default, no bus is active
 	bus_t bus = NONE;
 
@@ -120,25 +114,14 @@ dpt_frame_t* RCF_scan_bus(void)
 	RCF.bus_curr_stat = bus;
 
 	// use event frame depending on current new state
-	// compute frame address (first event frame is reset then we have NOM, RED, NONE)
-#if 0
-	addr = (void*)( sizeof(dpt_frame_t) + bus * sizeof(dpt_frame_t) );
-#else
-	addr = sizeof(dpt_frame_t) + bus * sizeof(dpt_frame_t);
-#endif
-
-#if 0
-	// copy event frame from EEPROM
-	eeprom_read_block(&RCF.out, (const void *)addr, sizeof(dpt_frame_t));
-#else
-	// force a container frame with only 1 frame
+	// build a container frame to read the state frame from eeprom
 	RCF.out.orig = DPT_SELF_ADDR;
 	RCF.out.dest = DPT_SELF_ADDR;
 	RCF.out.cmde = FR_CONTAINER;
-	RCF.out.argv[0] = (addr & 0xff00) >> 8;
-	RCF.out.argv[1] = (addr & 0x00ff) >> 0;
-	RCF.out.argv[2] = 1;
-#endif
+	RCF.out.argv[0] = 0;
+	RCF.out.argv[1] = 0;
+	RCF.out.argv[2] = 0;
+	RCF.out.argv[3] = bus + 1;
 
 	// return the pointer to reconf frame
 	return &RCF.out;
@@ -219,7 +202,7 @@ u8 RCF_run(void)
 	fr = RCF_scan_bus();
 
 	// if state has changed
-	if (fr != NULL ) {
+	if (fr != NULL) {
 		// store frame
 		RCF.out = *fr;
 
