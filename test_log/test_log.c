@@ -18,6 +18,7 @@
 typedef struct {
 	void (*rx)(dpt_frame_t* fr);
 	u8 tx_ret;
+	dpt_interface_t* interf;
 } DPT_t;
 
 DPT_t DPT;
@@ -46,6 +47,15 @@ void DPT_register(dpt_interface_t* interf)
 	TEST_log("DPT_register : channel #%d, cmde [0x%08x]", interf->channel, interf->cmde_mask);
 
 	DPT.rx = interf->rx;
+	DPT.interf = interf;
+}
+
+
+void DPT_rx(dpt_frame_t* fr)
+{
+	if ( DPT.interf->cmde_mask & (1 << fr->cmde) ) {
+		DPT.rx(fr);
+	}
 }
 
 
@@ -117,13 +127,13 @@ static void test_init(void)
 {
 	// check correct initialization
 	// DPT_register is called every test via the start function
-	TEST_check("DPT_register : channel #6, cmde [0x00000060]");
+	TEST_check("DPT_register : channel #6, cmde [0x04000060]");
 }
 
 
 static void test_scan_empty_log(void)
 {
-	TEST_check("DPT_register : channel #6, cmde [0x00000060]");
+	TEST_check("DPT_register : channel #6, cmde [0x04000060]");
 	TEST_check("DPT_lock : channel #6");
 	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 9b 00 00 }");
 	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 9b 00 00 }");
@@ -145,7 +155,7 @@ static void test_scan_empty_log(void)
 	LOG_run();
 
 	// request response with empty eeprom
-	DPT.rx(&fr_empty_log);
+	DPT_rx(&fr_empty_log);
 
 	LOG_run();
 	LOG_run();
@@ -154,7 +164,7 @@ static void test_scan_empty_log(void)
 
 static void test_scan_not_empty_log(void)
 {
-	TEST_check("DPT_register : channel #6, cmde [0x00000060]");
+	TEST_check("DPT_register : channel #6, cmde [0x04000060]");
 	TEST_check("DPT_lock : channel #6");
 	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 9b 00 00 }");
 	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 a2 00 00 }");
@@ -197,33 +207,22 @@ static void test_scan_not_empty_log(void)
 	LOG_run();
 
 	// request response with not empty eeprom
-	DPT.rx(&fr_not_empty_log_1);
+	DPT_rx(&fr_not_empty_log_1);
 	LOG_run();
 	LOG_run();
 
-	DPT.rx(&fr_not_empty_log_2);
+	DPT_rx(&fr_not_empty_log_2);
 	LOG_run();
 	LOG_run();
 
-	DPT.rx(&fr_empty_log);
+	DPT_rx(&fr_empty_log);
 	LOG_run();
 	LOG_run();
 }
 
 
-static void test_log_cmde(void)
+static void test_unlog_filter_cmde(void)
 {
-	TEST_check("DPT_register : channel #6, cmde [0x00000060]");
-	TEST_check("DPT_lock : channel #6");
-	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 9b 00 00 }");
-	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 a2 00 00 }");
-	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 a9 00 00 }");
-	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x06, .argv = 0x00 a9 1a 0e }");
-	TEST_check("TIME_get : t = 10000");
-	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x06, .argv = 0x00 ab 00 27 }");
-	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x06, .argv = 0x00 ad 00 07 }");
-	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x06, .argv = 0x00 af f0 ff }");
-
 	dpt_frame_t fr_not_empty_log_1 = {
 		.dest = 0x01,
 		.orig = 0x01,
@@ -252,6 +251,95 @@ static void test_log_cmde(void)
 		.nat = 0,
 		.cmde = FR_EEP_READ,
 		.argv = { 0x00, 0xa9, 0xff, 0xff }
+	};
+
+	dpt_frame_t fr_cmde_state = {
+		.dest = 0x01,
+		.orig = 0x0a,
+		.resp = 0,
+		.error = 0,
+		.nat = 0,
+		.cmde = FR_STATE,
+		.argv = { 0x00, 0x07, 0xf0, 0xff }
+	};
+
+
+	TEST_check("DPT_register : channel #6, cmde [0x04000060]");
+	TEST_check("DPT_lock : channel #6");
+
+	// read request at start of eeprom log zone
+	LOG_run();
+	DPT.tx_ret = OK;
+	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 9b 00 00 }");
+
+	// request response with not empty eeprom
+	DPT_rx(&fr_not_empty_log_1);
+	LOG_run();
+	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 a2 00 00 }");
+
+	DPT_rx(&fr_not_empty_log_2);
+	LOG_run();
+	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 a9 00 00 }");
+
+	DPT_rx(&fr_empty_log);
+	LOG_run();
+	LOG_run();
+
+	DPT_rx(&fr_cmde_state);
+	LOG_run();
+	LOG_run();
+
+
+	LOG_run();
+	LOG_run();
+	LOG_run();
+	LOG_run();
+	LOG_run();
+}
+
+static void test_log_cmde(void)
+{
+	dpt_frame_t fr_not_empty_log_1 = {
+		.dest = 0x01,
+		.orig = 0x01,
+		.resp = 1,
+		.error = 0,
+		.nat = 0,
+		.cmde = FR_EEP_READ,
+		.argv = { 0x00, 0x9b, 0x00, 0x00 }
+	};
+
+	dpt_frame_t fr_not_empty_log_2 = {
+		.dest = 0x01,
+		.orig = 0x01,
+		.resp = 1,
+		.error = 0,
+		.nat = 0,
+		.cmde = FR_EEP_READ,
+		.argv = { 0x00, 0xa2, 0x00, 0x00 }
+	};
+
+	dpt_frame_t fr_empty_log = {
+		.dest = 0x01,
+		.orig = 0x01,
+		.resp = 1,
+		.error = 0,
+		.nat = 0,
+		.cmde = FR_EEP_READ,
+		.argv = { 0x00, 0xa9, 0xff, 0xff }
+	};
+
+	dpt_frame_t fr_cmde_enable_log = {
+		.dest = 0x01,
+		.orig = 0x01,
+		.resp = 0,
+		.error = 0,
+		.nat = 0,
+		.cmde = FR_LOG_CMD,
+		.argv = { 0xff, 0x00, 0x00, 0x00 }
 	};
 
 	dpt_frame_t fr_cmde_state = {
@@ -304,43 +392,58 @@ static void test_log_cmde(void)
 		.argv = { 0x00, 0xaf, 0xf0, 0xff }
 	};
 
+	TEST_check("DPT_register : channel #6, cmde [0x04000060]");
+	TEST_check("DPT_lock : channel #6");
 
 	// read request at start of eeprom log zone
 	LOG_run();
 	DPT.tx_ret = OK;
 	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 9b 00 00 }");
 
 	// request response with not empty eeprom
-	DPT.rx(&fr_not_empty_log_1);
+	DPT_rx(&fr_not_empty_log_1);
+	LOG_run();
+	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 a2 00 00 }");
+
+	DPT_rx(&fr_not_empty_log_2);
+	LOG_run();
+	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x05, .argv = 0x00 a9 00 00 }");
+
+	DPT_rx(&fr_empty_log);
 	LOG_run();
 	LOG_run();
 
-	DPT.rx(&fr_not_empty_log_2);
+	DPT_rx(&fr_cmde_enable_log);
 	LOG_run();
 	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x9a, .argv = 0xff 00 00 00 }");
 
-	DPT.rx(&fr_empty_log);
+	DPT_rx(&fr_cmde_state);
 	LOG_run();
 	LOG_run();
-
-	DPT.rx(&fr_cmde_state);
-	LOG_run();
-	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x06, .argv = 0x00 a9 1a 0e }");
 
 	TIME.t = 10000;
-	DPT.rx(&fr_eep_write_resp_1);
+	TEST_check("TIME_get : t = 10000");
+	DPT_rx(&fr_eep_write_resp_1);
 	LOG_run();
 	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x06, .argv = 0x00 ab 00 27 }");
 
-	DPT.rx(&fr_eep_write_resp_2);
+	DPT_rx(&fr_eep_write_resp_2);
 	LOG_run();
 	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x06, .argv = 0x00 ad 00 07 }");
 
-	DPT.rx(&fr_eep_write_resp_3);
+	DPT_rx(&fr_eep_write_resp_3);
 	LOG_run();
 	LOG_run();
+	TEST_check("DPT_tx : channel #6, fr = { .dest = 0x01, .orig = 0x01, .cmde = 0x06, .argv = 0x00 af f0 ff }");
 
-	DPT.rx(&fr_eep_write_resp_4);
+	DPT_rx(&fr_eep_write_resp_4);
 	LOG_run();
 	LOG_run();
 
@@ -369,10 +472,11 @@ int main(int argc, char* argv[])
 		.start = start,
 		.stop = stop,
 		.list = {
-			{ test_init,			"init" },
+			{ test_init,				"init" },
 			{ test_scan_empty_log,		"test scan empty log" },
 			{ test_scan_not_empty_log,	"test scan not empty log" },
-			{ test_log_cmde,		"test log cmde" },
+			{ test_unlog_filter_cmde,	"test unlog filtered cmde" },
+			{ test_log_cmde,			"test log cmde" },
 			{ NULL,				NULL }
 		},
 	};

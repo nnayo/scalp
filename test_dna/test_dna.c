@@ -323,8 +323,8 @@ static void test_BC_scan_BS(void)
 	TEST_check("DPT_gen_call : 0x01");
 	TEST_check("DPT_lock : channel #2");
 	TEST_check("DPT_unlock : channel #2");
-	TEST_check("DPT_lock : channel #2");
-	TEST_check("DPT_unlock : channel #2");
+	//TEST_check("DPT_lock : channel #2");
+	//TEST_check("DPT_unlock : channel #2");
 
 	dpt_frame_t fr_0x08_free = {
 		.dest = 0x00,
@@ -497,8 +497,8 @@ static void test_BC_get_IS_regs(void)
 	TEST_check("DPT_lock : channel #2");
 	TEST_check("DPT_unlock : channel #2");
 	TEST_check("DPT_lock : channel #2");
-	TEST_check("DPT_unlock : channel #2");
-	TEST_check("DPT_lock : channel #2");
+	//TEST_check("DPT_unlock : channel #2");
+	//TEST_check("DPT_lock : channel #2");
 	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x0d, .orig = 0x08, .cmde = 0x8b, .argv = 0x00 00 00 00 }");
 	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x02 05 0d 00 }");
 	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x03 00 00 00 }");
@@ -521,13 +521,29 @@ static void test_BC_get_IS_regs(void)
 	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x08 02 25 00 }");
 	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x09 02 21 00 }");
 	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0c, .argv = 0x02 02 00 00 }");
+
 	TEST_check("DPT_unlock : channel #2");
+	TEST_check("DPT_lock : channel #2");
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x0a, .orig = 0x08, .cmde = 0x8b, .argv = 0x00 00 00 00 }");
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x02 05 0d 00 }");
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x03 05 09 00 }");
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x04 04 0a 00 }");
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x05 00 00 00 }");
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x06 00 00 00 }");
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x07 00 00 00 }");
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x08 02 25 00 }");
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0d, .argv = 0x09 02 21 00 }");
+
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x00, .orig = 0x08, .cmde = 0x0c, .argv = 0x03 02 00 00 }");
+	TEST_check("DPT_unlock : channel #2");
+
 	TEST_check("DPT_lock : channel #2");
 	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x0a, .orig = 0x08, .cmde = 0x8d, .argv = 0x02 05 0d 00 }");
 	TEST_check("DPT_unlock : channel #2");
 	TEST_check("DPT_lock : channel #2");
-	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x0a, .orig = 0x08, .cmde = 0x8c, .argv = 0x02 02 00 00 }");
+	TEST_check("DPT_tx : channel #2, fr = { .dest = 0x0a, .orig = 0x08, .cmde = 0x8c, .argv = 0x03 02 00 00 }");
 	TEST_check("DPT_unlock : channel #2");
+
 
 	dpt_frame_t fr_0x08_free = {
 		.dest = 0x00,

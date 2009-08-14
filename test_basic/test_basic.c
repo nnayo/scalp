@@ -65,6 +65,9 @@ u16 pgm_read_word(u16 addr)
 	return PGM.data;
 }
 
+void memcpy_P()
+{
+}
 
 
 //----------------------------------------
@@ -657,6 +660,7 @@ static void test_container(void)
 	dpt_frame_t container = {
 		.dest = 0x0b,
 		.orig = 0x08,
+		.t_id = 0,
 		.cmde = FR_NO_CMDE,
 		.argv = { 0x12, 0x34, 0x56, 0x78 }
 	};
@@ -664,8 +668,9 @@ static void test_container(void)
 	dpt_frame_t fr = {
 		.dest = 0x0a,
 		.orig = 0x07,
+		.t_id = 0,
 		.cmde = FR_CONTAINER,
-		.argv = { 0x00, 0x08, 0x03, 0x00 }
+		.argv = {  0x00, 0x08, 0x03, 0xee}
 	};
 
 	// DPT_register is called every test via the start function
@@ -742,20 +747,20 @@ int main(int argc, char* argv[])
 		.start = start,
 		.stop = stop,
 		.list = {
-			{ test_init,			"init" },
-			{ test_rx_frame,		"test rx frame" },
-			{ test_unknown_cmde,		"test unknown cmde" },
-			{ test_dpt_retry,		"test dpt retry" },
-			{ test_rx_fifo_deepness,	"test rx fifo deepness" },
-			{ test_no_cmde,			"test no cmde" },
-			{ test_eeprom_read,		"test eeprom read" },
-			{ test_eeprom_write,		"test eeprom write" },
-			{ test_flash_read,		"test flash read" },
-			{ test_flash_write,		"test flash write" },
-			{ test_wait,			"test wait" },
+			{ test_init,					"init" },
+			{ test_rx_frame,				"test rx frame" },
+			{ test_unknown_cmde,			"test unknown cmde" },
+			{ test_dpt_retry,				"test dpt retry" },
+			{ test_rx_fifo_deepness,		"test rx fifo deepness" },
+			{ test_no_cmde,					"test no cmde" },
+			{ test_eeprom_read,				"test eeprom read" },
+			{ test_eeprom_write,			"test eeprom write" },
+			{ test_flash_read,				"test flash read" },
+			{ test_flash_write,				"test flash write" },
+			{ test_wait,					"test wait" },
 			{ test_cmde_sequence_with_wait,	"test cmde sequence with wait" },
-			{ test_container,		"test container" },
-			{ NULL,				NULL }
+			{ test_container,				"test container" },
+			{ NULL,							NULL }
 		},
 	};
 
