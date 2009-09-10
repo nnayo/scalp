@@ -37,6 +37,7 @@
 #define PCA9540B_ADDR	0x70	// I2C mux
 
 #define NB_IN			3		// incoming frames buffer size
+#define NB_OUT			5		// outgoing frames buffer size
 
 //--------------------------------------
 // private enums
@@ -57,7 +58,7 @@ static struct {
 
 	pt_t pt;					// dna thread
 	pt_t pt2;					// secondary thread (scan_free, scan_bs, is_reg)
-	pt_t pt_list;				// list thread
+	pt_t pt3;					// thirdary thread (list_updater, is_reg_wait)
 
 	dna_list_t list[DNA_LIST_SIZE];	// list of the I2C connected components (BC, self then other IS)
 	u8 nb_is;					// number of registered IS
@@ -67,8 +68,9 @@ static struct {
 	fifo_t in_fifo;				// incoming frames fifo
 	dpt_frame_t in_buf[NB_IN];	// incoming frames buffer
 
-	//dpt_frame_t in;				// incoming frame
 	dpt_frame_t out;			// out going frame
+	//fifo_t out_fifo;			// outgoing frames fifo
+	//dpt_frame_t out_buf[NB_IN];	// outgoing frames buffer
 
 	u8 tmp;						// all purpose temporary buffer
 
@@ -201,13 +203,20 @@ static PT_THREAD( DNA_scan_bs(pt_t* pt) )
 }
 
 
-// this thread is ran only if the reg node list is to be updated
+// this thread runs when the reg node list is to be updated
 // it is restarted each time the BC signals a new node in the list
+// this is done by setting the index to DNA_BC
 static PT_THREAD( DNA_list_updater(pt_t* pt) )
 {
 	PT_BEGIN(pt);
 
-	// when the thread is call, DNA.index == DNA_BC
+	// wait as long as the updated list doesn't need to be sent
+	PT_WAIT_WHILE(pt, DNA.index >= DNA_LIST_SIZE);
+
+	// when list updating starts
+	// it is useless to lock the channel
+	// as it is done by DNA_bc_frame
+
 	// increment the index in the reg nodes list
 	DNA.index++;
 
@@ -219,6 +228,17 @@ static PT_THREAD( DNA_list_updater(pt_t* pt) )
 	DNA.out.nat = 0;
 	DNA.out.argv[3] = 0x00;
 	
+	if ( DNA.index < DNA_LIST_SIZE ) {
+		// compose a FR_LINE command
+		DNA.out.cmde = FR_LINE;
+		DNA.out.argv[0] = DNA.index;
+		DNA.out.argv[1] = DNA.list[DNA.index].type;
+		DNA.out.argv[2] = DNA.list[DNA.index].i2c_addr;
+
+		// send the frame
+		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
+	}
+
 	if ( DNA.index == DNA_LIST_SIZE) {
 		// once the update is finished
 		// compose a FR_LIST command
@@ -230,29 +250,18 @@ static PT_THREAD( DNA_list_updater(pt_t* pt) )
 		// send the frame
 		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
 
-		// update is finished, so finish the thread
-		PT_EXIT(pt);
+		// then unlock the channel
+		DPT_unlock(&DNA.interf);
 	}
-	else {
-		// compose a FR_LINE command
-		DNA.out.cmde = FR_LINE;
-		DNA.out.argv[0] = DNA.index;
-		DNA.out.argv[1] = DNA.list[DNA.index].type;
-		DNA.out.argv[2] = DNA.list[DNA.index].i2c_addr;
 
-		// send the frame
-		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
-
-		// some more lines have to be sent
-		// loop back to begin
-		PT_RESTART(pt);
-	}
+	// loop back
+	PT_RESTART(pt);
 
 	PT_END(pt);
 }
 
 
-static PT_THREAD( DNA_bc(pt_t* pt) )
+static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 {
 	dpt_frame_t fr;
 	u8 addr;
@@ -281,8 +290,11 @@ static PT_THREAD( DNA_bc(pt_t* pt) )
 	DNA.out.argv[2] = 0x00;
 	DNA.out.argv[3] = 0x00;
 
-	// lock the channel
-	DPT_lock(&DNA.interf);
+	// if list updating isn't running
+	if ( DNA.index >= DNA_LIST_SIZE ) {
+		// lock the channel
+		DPT_lock(&DNA.interf);
+	}
 
 	switch (fr.cmde) {
 		case FR_REGISTER:
@@ -302,9 +314,8 @@ static PT_THREAD( DNA_bc(pt_t* pt) )
 				PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
 
 				// prepare to send the new list to every node
-				// list sending will start by the first line after the BC line
-				DNA.index = DNA_BC;
-				PT_SPAWN(pt, &DNA.pt_list, DNA_list_updater(&DNA.pt_list));
+				// list sending will start by the BC line
+				DNA.index = 0;
 			}
 
 			break;
@@ -335,8 +346,11 @@ static PT_THREAD( DNA_bc(pt_t* pt) )
 			break;
 	}
 
-	// finally, unlock the channel
-	DPT_unlock(&DNA.interf);
+	// if list updating isn't running
+	if ( DNA.index >= DNA_LIST_SIZE ) {
+		// finally, unlock the channel
+		DPT_unlock(&DNA.interf);
+	}
 
 	// loop back
 	PT_RESTART(pt);
@@ -345,9 +359,49 @@ static PT_THREAD( DNA_bc(pt_t* pt) )
 }
 
 
-static PT_THREAD( DNA_is_reg(pt_t* pt) )
+static u8 DNA_bc(void)
+{
+	// incoming frames handling
+	(void)PT_SCHEDULE(DNA_bc_frame(&DNA.pt2));
+
+	// DNA list updating handling
+	(void)PT_SCHEDULE(DNA_list_updater(&DNA.pt3));
+
+	return OK;
+}
+
+
+static PT_THREAD( DNA_is_reg_wait(pt_t* pt, u8* ret) )
 {
 	dpt_frame_t fr;
+
+	PT_BEGIN(pt);
+
+	// wait for the time-out or the reception of the response
+	PT_WAIT_UNTIL(pt, (TIME_get() >= DNA.time) || (OK == (*ret = FIFO_get(&DNA.in_fifo, &fr))) );
+
+	// check whether the REGISTER resp is received
+	if ( (fr.cmde == FR_REGISTER) && fr.resp ) {
+		// registering is done
+		// update reg nodes list
+		DNA.list[DNA_BC].type = DNA_BC;
+		DNA.list[DNA_BC].i2c_addr = fr.orig;
+
+		// allow general calls
+		DPT_gen_call(OK);
+
+		// init is finished
+		PT_EXIT(pt);
+	}
+
+	PT_RESTART(pt);
+
+	PT_END(pt);
+}
+
+
+static PT_THREAD( DNA_is_reg(pt_t* pt) )
+{
 	u8 ret = KO;
 
 	// for the IS, it is needed to register
@@ -368,7 +422,7 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 	PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK );
 
 	// wait for the time-out or the reception of the response
-	PT_WAIT_UNTIL(pt, (TIME_get() >= DNA.time) || (OK == (ret = FIFO_get(&DNA.in_fifo, &fr))) );
+	PT_SPAWN(pt, &DNA.pt3, DNA_is_reg_wait(&DNA.pt3, &ret));
 
 	// on time-out
 	if ( ret == KO ) {
@@ -397,20 +451,6 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 		}
 	}
 
-	// check whether the REGISTER resp is received
-	if ( (fr.cmde == FR_REGISTER) && fr.resp ) {
-		// registering is done
-		// update reg nodes list
-		DNA.list[DNA_BC].type = DNA_BC;
-		DNA.list[DNA_BC].i2c_addr = fr.orig;
-
-		// allow general calls
-		DPT_gen_call(OK);
-
-		// init is finished
-		PT_EXIT(pt);
-	}
-
 	PT_END(pt);
 }
 
@@ -423,6 +463,12 @@ static PT_THREAD( DNA_is(pt_t* pt) )
 
 	// wait incoming commands
 	PT_WAIT_UNTIL(pt, OK == FIFO_get(&DNA.in_fifo, &fr));
+
+	// if frame is a response
+	if ( fr.resp ) {
+		// ignore it
+		PT_RESTART(pt);
+	}
 
 	switch (fr.cmde) {
 		case FR_LIST:
@@ -494,8 +540,9 @@ void DNA_init(dna_t mode)
 	// until the IS is registered
 	DPT_lock(&DNA.interf);
 
-	// set incoming fifo
+	// set fifoes
 	FIFO_init(&DNA.in_fifo, DNA.in_buf, NB_IN, sizeof(dpt_frame_t));
+	//FIFO_init(&DNA.out_fifo, DNA.out_buf, NB_OUT, sizeof(dpt_frame_t));
 }
 
 
@@ -534,7 +581,10 @@ u8 DNA_run(void)
 		DPT_gen_call(OK);
 
 		// BC behaviour handling
-		PT_SPAWN(&DNA.pt, &DNA.pt2, DNA_bc(&DNA.pt2));
+		PT_INIT(&DNA.pt2);
+		PT_INIT(&DNA.pt3);
+		DNA.index = DNA_LIST_SIZE;
+		PT_WAIT_WHILE(&DNA.pt, DNA_bc() == OK);
 	}
 	// else acting as an IS
 	else {
