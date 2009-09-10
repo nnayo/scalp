@@ -5,6 +5,7 @@
 #include "utils/time.h"
 
 #include <string.h>	// memset
+#include <avr/io.h>	// SREG
 
 
 //----------------------------------------
@@ -59,16 +60,6 @@ static void DPT_dispatch(dpt_frame_t* fr)
 			if (DPT.channels[i]->rx != NULL)
 				DPT.channels[i]->rx(fr);
 		}
-
-#if 0
-		// if command is I2C read or write
-		if ( (cmde == FR_I2C_READ)||(cmde == FR_I2C_WRITE) ) {
-			// it is always transmit
-			// call the associated call-back if registered
-			if (DPT.channels[i]->rx != NULL)
-				DPT.channels[i]->rx(fr);
-		}
-#endif
 	}
 }
 
@@ -113,17 +104,21 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 		case TWI_MS_TX_END:
 			// writing data ends
 
-			// fill header
-			DPT.in.dest = DPT_SELF_ADDR;
-			DPT.in.orig = DPT.out.dest;
-			DPT.in.t_id = DPT.out.t_id;
-			DPT.in.cmde = DPT.out.cmde;
-			DPT.in.nat = DPT.out.nat;
-			DPT.in.resp = 1;
-			DPT.in.error = 0;
+			// simple I2C actions are directly handled
+			// communications with other nodes will received a response
+			if ( (DPT.out.cmde == FR_I2C_READ) || (DPT.out.cmde == FR_I2C_WRITE) ) {
+				// fill header
+				DPT.in.dest = DPT_SELF_ADDR;
+				DPT.in.orig = DPT.out.dest;
+				DPT.in.t_id = DPT.out.t_id;
+				DPT.in.cmde = DPT.out.cmde;
+				DPT.in.nat = DPT.out.nat;
+				DPT.in.resp = 1;
+				DPT.in.error = 0;
 
-			// dispatch the response
-			DPT_dispatch(&DPT.in);
+				// dispatch the response
+				DPT_dispatch(&DPT.in);
+			}
 
 			// signal the end of transmission
 			DPT.txed = OK;
@@ -203,7 +198,7 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 			// sending is over
 			DPT.txed = OK;
 
-			// and release the bus
+			// and then release the bus
 			TWI_stop();
 
 			break;
@@ -308,6 +303,7 @@ u8 DPT_tx(dpt_interface_t* interf, dpt_frame_t* fr)
 {
 	u8 twi_res;
 	u8 i;
+	u8 sreg;
 
 	// if the tx is locked by a channel of higher priority
 	for ( i = 0; (i < DPT_CHAN_NB) && (i < interf->channel); i++ ) {
@@ -362,8 +358,17 @@ u8 DPT_tx(dpt_interface_t* interf, dpt_frame_t* fr)
 		DPT_dispatch(fr);
 	}
 
+	// compute and save time-out limit
+	// byte transmission is typically 100 us
+	// thus a security factor of 2 is used
+	DPT.time_out = TIME_get() + TIME_1_MSEC * sizeof(dpt_frame_t);
+
 	// the frame is broadcasted and/or distant node addressed
 	//
+	// prevent interrupts
+	sreg = SREG;
+	SREG &= _BV(7);
+
 	// read from and write to an I2C component are handled specificly
 	switch ( fr->cmde ) {
 		case FR_I2C_READ:
@@ -383,17 +388,21 @@ u8 DPT_tx(dpt_interface_t* interf, dpt_frame_t* fr)
 
 	// if the TWI is not able to sent the frame
 	if ( twi_res == KO ) {
+		// prevent time-out signalling
+		DPT.time_out = TIME_MAX;
+
 		// release the frame sending blocking flag
 		DPT.txed = OK;
+
+		// re-enable the interrupts
+		SREG = sreg;
 
 		// ask for transmission retry
 		return KO;
 	}
 
-	// compute and save time-out limit
-	// byte transmission is typically 100 us
-	// thus a security factor of 2 is used
-	DPT.time_out = TIME_get() + TIME_1_MSEC * sizeof(dpt_frame_t);
+	// re-enable the interrupts
+	SREG = sreg;
 
 	// transmission is started by hardware
 	// its end will be signalled by TWI driver
