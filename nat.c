@@ -48,8 +48,6 @@ static PT_THREAD( NAT_tty_rx(pt_t* pt) )
 	// following char (orig) is subject of time-out
 	NAT.time_out = TIME_get() + 5 * TIME_1_MSEC;
 	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
-	if ( TIME_get() >= NAT.time_out )
-		PT_RESTART(&NAT.pt);
 
 	NAT.twi.orig = (u8)(c & 0xff);
 
@@ -91,6 +89,12 @@ static PT_THREAD( NAT_tty_rx(pt_t* pt) )
 	NAT.time_out += 5 * TIME_1_MSEC;
 	PT_WAIT_WHILE(&NAT.pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
 	NAT.twi.argv[3] = (u8)(c & 0xff);
+
+	// if a time-out happens
+	if ( TIME_get() >= NAT.time_out ) {
+		// loop back
+		PT_RESTART(&NAT.pt);
+	}
 
 	// send the command
 	DPT_lock(&NAT.interf);
@@ -176,6 +180,7 @@ void NAT_run(void)
 
 	// send back the frame
 	if ( NAT.rxed ) {
+#if 0
 		// if the error frame flag is set
 		if ( NAT.tty.error ) {
 			// if transaction id is same in command and response
@@ -189,10 +194,19 @@ void NAT_run(void)
 		}
 		else {
 			// if the received destination matches the source origin
-			if ( NAT.tty.dest == NAT.twi.orig ) {
+			if ( NAT.tty.orig == NAT.twi.dest ) {
 				// send it
 				NAT_tty_tx();
 			}
+		}
+#endif
+		// if transaction id is same in command and response
+		if ( NAT.tty.t_id == NAT.twi.t_id ) {
+			// send it
+			NAT_tty_tx();
+
+			// modify received transaction id to prevent further sending
+			//NAT.twi.t_id++;
 		}
 
 		// re-allow reception
