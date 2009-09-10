@@ -14,7 +14,11 @@
 // private defines
 //
 
-#define ALV_ANTI_BOUNCE_LIMIT	5
+#define ALV_ANTI_BOUNCE_UPPER_LIMIT	7
+#define ALV_UPPER_TRIGGER			0x01
+#define ALV_ANTI_BOUNCE_LOWER_LIMIT	-7
+#define ALV_LOWER_TRIGGER			0x02
+
 #define ALV_TIME_INTERVAL	TIME_1_SEC
 
 
@@ -29,7 +33,8 @@ static struct {
 
 	dpt_frame_t fr;				// a buffer frame
 
-	u8 anti_bounce;				// anti-bounce counter
+	s8 volatile anti_bounce;	// anti-bounce counter
+	u8 trigger;					// signal if the action has already happened
 
 	u8 nb_mnt;					// number of other found minuteries
 	u8 mnt_addr[2];				// addresses of the other minuteries
@@ -55,7 +60,7 @@ static u8 ALV_nodes_addresses(void)
 	list = DNA_list(&nb_is, &nb_bs);
 
 	// extract the other minuteries addresses
-	for ( i = 0; i < nb_is; i++ ) {
+	for ( i = DNA_FIRST_IS_INDEX(nb_is); i <= DNA_LAST_IS_INDEX(nb_is); i++ ) {
 		// same type but different address
 		if ( (list[i].type == DNA_SELF_TYPE(list)) &&
 			( list[i].i2c_addr != DNA_SELF_ADDR(list)) ) {
@@ -82,10 +87,6 @@ static u8 ALV_next_address(void)
 
 	// if no other minuterie is visible
 	if ( ALV.nb_mnt == 0 ) {
-		// increment anti-bounce counter
-		// because we're in trouble as we're alone
-		ALV.anti_bounce++;
-
 		// return an invalid address (it is in the range of the BS)
 		return DPT_LAST_ADDR;
 	}
@@ -107,22 +108,22 @@ static u8 ALV_next_address(void)
 
 static void ALV_dpt_rx(dpt_frame_t* fr)
 {
-	// if not a status response
-	if ( !fr->resp ) {
+	// if not the response from current status request
+	if ( !fr->resp || (fr->t_id != ALV.fr.t_id) ) {
 		// throw it away
 		return;
 	}
 
-	// if response is in error
-	if ( fr->error ) {
-		// increment anti-counter
+	// if response is not in error
+	if ( !fr->error ) {
+		// increase number of successes
 		ALV.anti_bounce++;
 
-		return;
+		// prevent overflow
+		if ( ALV.anti_bounce > ALV_ANTI_BOUNCE_UPPER_LIMIT ) {
+			ALV.anti_bounce = ALV_ANTI_BOUNCE_UPPER_LIMIT;
+		}
 	}
-
-	// everything is ok, so reset the anti-bounce counter
-	ALV.anti_bounce = 0;
 }
 
 
@@ -141,22 +142,34 @@ static PT_THREAD( ALV_pt(pt_t* pt) )
 	// extract visible other minuteries addresses
 	self_addr = ALV_nodes_addresses();
 
-	// build the get state request
-	ALV.fr.orig = self_addr;
-	ALV.fr.dest = ALV_next_address();
-	ALV.fr.resp = 0;
-	ALV.fr.error = 0;
-	ALV.fr.nat = 0;
-	ALV.fr.cmde = FR_STATE;
-	ALV.fr.argv[0] = 0x00;
+	// if another minuterie is visible
+	if ( ALV.nb_mnt != 0 ) {
+		// build the get state request
+		ALV.fr.orig = self_addr;
+		ALV.fr.dest = ALV_next_address();
+		ALV.fr.resp = 0;
+		ALV.fr.error = 0;
+		ALV.fr.nat = 0;
+		ALV.fr.cmde = FR_STATE;
+		ALV.fr.argv[0] = 0x00;
 
-	// send the status request
-	DPT_lock(&ALV.interf);
-	PT_WAIT_UNTIL(pt, OK == DPT_tx(&ALV.interf, &ALV.fr));
-	DPT_unlock(&ALV.interf);
+		// send the status request
+		DPT_lock(&ALV.interf);
+		PT_WAIT_UNTIL(pt, OK == DPT_tx(&ALV.interf, &ALV.fr));
+		DPT_unlock(&ALV.interf);
+	}
+	else {
+		// one more failure
+		ALV.anti_bounce--;
 
-	// check if the anti-bounce counter has reached its limit
-	if ( ALV.anti_bounce > ALV_ANTI_BOUNCE_LIMIT ) {
+		// prevent underflow
+		if ( ALV.anti_bounce < ALV_ANTI_BOUNCE_LOWER_LIMIT ) {
+			ALV.anti_bounce = ALV_ANTI_BOUNCE_LOWER_LIMIT;
+		}
+	}
+
+	// when there are too many failures
+	if ( (ALV.anti_bounce == ALV_ANTI_BOUNCE_LOWER_LIMIT) && !(ALV.trigger & ALV_LOWER_TRIGGER) ) {
 		// then set the mode to autonomous
 		ALV.fr.orig = DPT_SELF_ADDR;
 		ALV.fr.dest = DPT_SELF_ADDR;
@@ -165,14 +178,39 @@ static PT_THREAD( ALV_pt(pt_t* pt) )
 		ALV.fr.nat = 0;
 		ALV.fr.cmde = FR_RECONF_FORCE_MODE;
 		ALV.fr.argv[0] = 0x00;
-		ALV.fr.argv[1] = 0x02;
+		ALV.fr.argv[1] = 0x02;		// no bus active
 
 		DPT_lock(&ALV.interf);
 		PT_WAIT_UNTIL(pt, OK == DPT_tx(&ALV.interf, &ALV.fr));
 		DPT_unlock(&ALV.interf);
 
-		// and finally block
-		PT_WAIT_WHILE(pt, OK);
+		// prevent any further lower trigger action
+		ALV.trigger |= ALV_LOWER_TRIGGER;
+
+		// but allow upper trigger action
+		ALV.trigger &= ~ALV_UPPER_TRIGGER;
+	}
+
+	if ( (ALV.anti_bounce == ALV_ANTI_BOUNCE_UPPER_LIMIT) && !(ALV.trigger & ALV_UPPER_TRIGGER) ) {
+		// then set the mode to autonomous
+		ALV.fr.orig = DPT_SELF_ADDR;
+		ALV.fr.dest = DPT_SELF_ADDR;
+		ALV.fr.resp = 0;
+		ALV.fr.error = 0;
+		ALV.fr.nat = 0;
+		ALV.fr.cmde = FR_RECONF_FORCE_MODE;
+		ALV.fr.argv[0] = 0x00;
+		ALV.fr.argv[1] = 0x03;		// bus mode is automatic
+
+		DPT_lock(&ALV.interf);
+		PT_WAIT_UNTIL(pt, OK == DPT_tx(&ALV.interf, &ALV.fr));
+		DPT_unlock(&ALV.interf);
+
+		// prevent any further upper trigger action
+		ALV.trigger |= ALV_UPPER_TRIGGER;
+
+		// but allow lower trigger action
+		ALV.trigger &= ~ALV_LOWER_TRIGGER;
 	}
 
 	// loop back
@@ -194,6 +232,7 @@ void ALV_init(void)
 
 	// variables init
 	ALV.anti_bounce = 0;
+	ALV.trigger = 0x00;
 	ALV.nb_mnt = 0;
 	ALV.cur_mnt = 0;
 	ALV.time_out = ALV_TIME_INTERVAL;
