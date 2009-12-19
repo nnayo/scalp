@@ -1,6 +1,8 @@
 #ifndef __FRAMES_H__
 # define __FRAMES_H__
 
+// number of arguments for each frame
+#define FRAME_NB_ARGS	7
 
 typedef enum {
 	// ---------------------------------
@@ -234,17 +236,36 @@ typedef enum {
 	// 	- 0xVV : voltage [0.0; 25.5] Volts
 
 
-	FR_BUZZER_CMD,				// 0x19 : turn ON/off buzzer
-	// argv #0 value :
-	// 	- 0x00 : off
-	// 	- 0xff : ON
-	// 	- other : ignored
+	// ---------------------------------
+	// safeguard emitter commands
+	//
 
+	FR_EMITTER_CMD,				// 0x19 : safeguard emitter control
+	// argv #0 value :
+	// 	- 0x00 : switch off
+	// 	- 0x0f : switch ON
+	// 	- 0x12 : take-off signaling
+	// 	- 0x4e : recovery mode
+	// 	- 0x7e : get current mode (from the 4 previous states)
+	// 	- 0xa5 : set take-off signal duration
+	// 	- 0xaa : get take-off signal duration
+	// 	- 0xc5 : set recovery ON duration
+	// 	- 0xca : get recovery ON duration
+	// 	- 0xe5 : set recovery off duration
+	// 	- 0xea : get recovery off duration
+	// 	- other : ignored
+	// argv #1 value : for durations only (in 1/10 s)
+
+
+	// ---------------------------------
+	// logger commands
+	//
 
 	FR_LOG_CMD,					// 0x1a : modify logging setup
 	// argv #0 value :
 	// 	- 0x00 : off
-	// 	- 0xff : ON
+	// 	- 0xfa : ON to sdcard
+	// 	- 0xfe : ON to eeprom
 	// 	- 0xa1 : AND filter MSB value with current MSB value
 	// 	- 0xa0 : AND filter LSB value with current LSB value
 	// 	- 0x51 : OR filter MSB value with current MSB value
@@ -252,20 +273,65 @@ typedef enum {
 	// argv #1 value :
 	//  - 0xVV : MSB part of the filter
 	// argv #2 value :
+	//  - 0xVV : part of the filter
+	// argv #3 value :
+	//  - 0xVV : part of the filter
+	// argv #4 value :
 	//  - 0xVV : LSB part of the filter
 
 
-	// ---------------------------------
-	// various masks and bits
-	//
+	FR_ROUT_LIST,				// : number of set routes
+	// argv #0 response : number of set routes
 
-	//FR_CMDE_MASK	= 0x1f,			// command part mask
-	//FR_NAT		= 0x20,			// Network Address Translation bit
-	//FR_ERROR	= 0x40,			// error bit
-	//FR_RESP		= 0x80,			// response bit
+	FR_ROUT_LINE,				// retrieve a line content
+	// argv #0 request : requested line
+	// argv #1 response : virtual address
+	// argv #2 response : routed address
+	// argv #3 response : result OK (1) or ko (0)
+
+	FR_ROUT_ADD,				// add a new route
+	// argv #0 request : virtual address
+	// argv #1 request : routed address
+	// argv #2 response : result OK (1) or ko (0)
+
+	FR_ROUT_DEL,				// delete a route
+	// argv #0 request : virtual address
+	// argv #1 request : routed address
+	// argv #2 response : result OK (1) or ko (0)
+
+	FR_SPI_WRITE,
+	FR_SPI_READ,
 
 } fr_cmdes_t;
 
+// ---------------------------------
+//
+// IP config :
+//	- MAC address (set/get)
+//	- IP address (set/get)
+//	- IP mask (set/get)
+//
+// PID :
+//	- P/I/D gain (set/get)
+//	- thresholds (set/get)
+//	- status (over-speeds, over-positions,...) (set/get)
+//	- position X/Y (set (command) / get (measure) )
+//	- streaming (ON/off)
+//	- mode (manuel/auto)
+//
+// data :
+//  - accelerations X/Y/Z
+//  - pressions x10/raw
+//  - IO (minuterie/XP)
+//  - status
+//  - ADC
+//  - CPU usage
+//
+//
+// log : save the whole frame (header included : to know the origin of the frame)
+// filters on :
+//  - command
+//  - origin
 
 // memory storage types for container frame
 #define EEPROM_STORAGE	0xee

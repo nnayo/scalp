@@ -1,3 +1,24 @@
+//---------------------
+//  Copyright (C) 2000-2009  <Yann GOUY>
+//
+//  This program is free software; you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation; either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program; see the file COPYING.  If not, write to
+//  the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+//  Boston, MA 02111-1307, USA.
+//
+//  you can write to me at <yann_gouy@yahoo.fr>
+//
+
 #include "scalp/common.h"
 
 #include "scalp/dispatcher.h"
@@ -7,7 +28,6 @@
 #include "utils/fifo.h"
 
 #include <avr/io.h>
-#include <avr/eeprom.h>
 
 
 //----------------------------------------
@@ -15,6 +35,7 @@
 //
 
 #define OUT_SIZE	3
+#define IN_SIZE		1
 
 #define LED_PORT		PORTA
 #define LED_DDR			DDRA
@@ -69,9 +90,10 @@ static struct {
 	// response handling
 	dpt_frame_t fr_rsp;			// a buffer frame
 
-	// incoming handling variables
+	// incoming fifo
 	dpt_frame_t fr_in;			// a buffer frame
-	volatile u8 rxed;			// flag set to OK when frame is rxed
+	fifo_t in;
+	dpt_frame_t in_buf[IN_SIZE];
 
 	cmn_state_t state;			// board state
 	cmn_bus_state_t bus;		// bus state
@@ -127,20 +149,17 @@ static PT_THREAD( CMN_rx(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// wait incoming frame
-	PT_WAIT_UNTIL(pt, CMN.rxed == OK);
+	PT_WAIT_UNTIL(pt, FIFO_get(&CMN.in, &CMN.fr_rsp));
 
-	// build default response frame header
-	CMN.fr_rsp.dest = CMN.fr_in.orig;
-	CMN.fr_rsp.orig = CMN.fr_in.dest;
-	CMN.fr_rsp.t_id = CMN.fr_in.t_id;
+	// if frame is a response
+	if (CMN.fr_rsp.resp) {
+		// ignore it
+		PT_RESTART(pt);
+	}
+
+	// update default response frame header
 	CMN.fr_rsp.resp = 1;
 	CMN.fr_rsp.error = 0;
-	CMN.fr_rsp.nat = CMN.fr_in.nat;
-	CMN.fr_rsp.cmde = CMN.fr_in.cmde;
-	CMN.fr_rsp.argv[0] = CMN.fr_in.argv[0];
-	CMN.fr_rsp.argv[1] = CMN.fr_in.argv[1];
-	CMN.fr_rsp.argv[2] = CMN.fr_in.argv[2];
-	CMN.fr_rsp.argv[3] = CMN.fr_in.argv[3];
 
 	switch (CMN.fr_rsp.cmde) {
 		case FR_STATE:
@@ -219,8 +238,7 @@ static PT_THREAD( CMN_rx(pt_t* pt) )
 	// enqueue the response
 	PT_WAIT_UNTIL(pt, OK == FIFO_put(&CMN.out, &CMN.fr_rsp));
 
-	// ready to receive another frame
-	CMN.rxed = KO;
+	PT_RESTART(pt);
 
 	PT_END(pt);
 }
@@ -326,25 +344,6 @@ static PT_THREAD( CMN_blink(pt_t* pt) )
 }
 
 
-static void CMN_dpt_rx(dpt_frame_t* fr)
-{
-	// if frame is a response
-	if (fr->resp) {
-		// ignore it
-		return;
-	}
-
-	// if frame buffer is free
-	if ( CMN.rxed == KO ) {
-		// prevent overwrite
-		CMN.rxed = OK;
-
-		// save incoming frame
-		CMN.fr_in = *fr;
-	}
-}
-
-
 //----------------------------------------
 // public functions
 //
@@ -353,7 +352,8 @@ static void CMN_dpt_rx(dpt_frame_t* fr)
 void CMN_init(void)
 {
 	// fifo init
-	FIFO_init(&CMN.out, &CMN.out_buf, OUT_SIZE, sizeof(dpt_frame_t));	
+	FIFO_init(&CMN.out, &CMN.out_buf, OUT_SIZE, sizeof(CMN.out_buf[0]));	
+	FIFO_init(&CMN.in, &CMN.in_buf, IN_SIZE, sizeof(CMN.in_buf[0]));	
 
 	// thread context init
 	PT_INIT(&CMN.pt_rx);
@@ -361,7 +361,6 @@ void CMN_init(void)
 	PT_INIT(&CMN.pt_blink);
 
 	// variables init
-	CMN.rxed = KO;
 	CMN.state = READY;
 	CMN.bus = NONE;
 	CMN.green_led_period = TIME_MAX;
@@ -372,7 +371,7 @@ void CMN_init(void)
 	// register own call-back for specific commands
 	CMN.interf.channel = 3;
 	CMN.interf.cmde_mask = _CM(FR_STATE) | _CM(FR_TIME_GET) | _CM(FR_MUX_POWER);
-	CMN.interf.rx = CMN_dpt_rx;
+	CMN.interf.queue = &CMN.in;
 	DPT_register(&CMN.interf);
 
 	// set led port direction

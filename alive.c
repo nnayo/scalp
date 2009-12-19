@@ -1,4 +1,22 @@
-// GPL v3 : copyright Yann GOUY
+//---------------------
+//  Copyright (C) 2000-2009  <Yann GOUY>
+//
+//  This program is free software; you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation; either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program; see the file COPYING.  If not, write to
+//  the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+//  Boston, MA 02111-1307, USA.
+//
+//  you can write to me at <yann_gouy@yahoo.fr>
 //
 
 #include "scalp/alive.h"
@@ -8,18 +26,21 @@
 
 #include "utils/time.h"
 #include "utils/pt.h"
+#include "utils/fifo.h"
 
 
 //----------------------------------------
 // private defines
 //
 
-#define ALV_ANTI_BOUNCE_UPPER_LIMIT	7
-#define ALV_UPPER_TRIGGER			0x01
-#define ALV_ANTI_BOUNCE_LOWER_LIMIT	-7
-#define ALV_LOWER_TRIGGER			0x02
+#define ALV_ANTI_BOUNCE_UPPER_LIMIT		7
+#define ALV_UPPER_TRIGGER				0x01
+#define ALV_ANTI_BOUNCE_LOWER_LIMIT		-7
+#define ALV_LOWER_TRIGGER				0x02
 
-#define ALV_TIME_INTERVAL	TIME_1_SEC
+#define ALV_TIME_INTERVAL				TIME_1_SEC
+
+#define QUEUE_SIZE						3
 
 
 //----------------------------------------
@@ -29,7 +50,8 @@
 static struct {
 	dpt_interface_t interf;		// dispatcher interface
 
-	pt_t pt;					// thread context
+	pt_t rx_pt;					// rx context
+	pt_t tx_pt;					// tx context
 
 	dpt_frame_t fr;				// a buffer frame
 
@@ -41,6 +63,9 @@ static struct {
 	u8 cur_mnt;					// current minuterie index
 
 	u32 time_out;				// time-out for scan request sending
+
+	dpt_frame_t buf[QUEUE_SIZE];
+	fifo_t in_fifo;				// reception queue
 } ALV;
 
 
@@ -106,16 +131,22 @@ static u8 ALV_next_address(void)
 }
 
 
-static void ALV_dpt_rx(dpt_frame_t* fr)
+static PT_THREAD( ALV_rx(pt_t* pt) )
 {
+	dpt_frame_t fr;
+
+	PT_BEGIN(pt);
+
+	PT_WAIT_UNTIL(pt, FIFO_get(&ALV.in_fifo, &fr));
+
 	// if not the response from current status request
-	if ( !fr->resp || (fr->t_id != ALV.fr.t_id) ) {
+	if ( !fr.resp || (fr.t_id != ALV.fr.t_id) ) {
 		// throw it away
-		return;
+		PT_RESTART(pt);
 	}
 
 	// if response is not in error
-	if ( !fr->error ) {
+	if ( !fr.error ) {
 		// increase number of successes
 		ALV.anti_bounce++;
 
@@ -124,10 +155,15 @@ static void ALV_dpt_rx(dpt_frame_t* fr)
 			ALV.anti_bounce = ALV_ANTI_BOUNCE_UPPER_LIMIT;
 		}
 	}
+
+	// loop back
+	PT_RESTART(pt);
+
+	PT_END(pt);
 }
 
 
-static PT_THREAD( ALV_pt(pt_t* pt) )
+static PT_THREAD( ALV_tx(pt_t* pt) )
 {
 	u8 self_addr;
 
@@ -149,7 +185,7 @@ static PT_THREAD( ALV_pt(pt_t* pt) )
 		ALV.fr.dest = ALV_next_address();
 		ALV.fr.resp = 0;
 		ALV.fr.error = 0;
-		ALV.fr.nat = 0;
+		//ALV.fr.nat = 0;
 		ALV.fr.cmde = FR_STATE;
 		ALV.fr.argv[0] = 0x00;
 
@@ -175,7 +211,7 @@ static PT_THREAD( ALV_pt(pt_t* pt) )
 		ALV.fr.dest = DPT_SELF_ADDR;
 		ALV.fr.resp = 0;
 		ALV.fr.error = 0;
-		ALV.fr.nat = 0;
+		//ALV.fr.nat = 0;
 		ALV.fr.cmde = FR_RECONF_FORCE_MODE;
 		ALV.fr.argv[0] = 0x00;
 		ALV.fr.argv[1] = 0x02;		// no bus active
@@ -197,7 +233,7 @@ static PT_THREAD( ALV_pt(pt_t* pt) )
 		ALV.fr.dest = DPT_SELF_ADDR;
 		ALV.fr.resp = 0;
 		ALV.fr.error = 0;
-		ALV.fr.nat = 0;
+		//ALV.fr.nat = 0;
 		ALV.fr.cmde = FR_RECONF_FORCE_MODE;
 		ALV.fr.argv[0] = 0x00;
 		ALV.fr.argv[1] = 0x03;		// bus mode is automatic
@@ -227,8 +263,9 @@ static PT_THREAD( ALV_pt(pt_t* pt) )
 // ALIVE module initialization
 void ALV_init(void)
 {
-	// thread context init
-	PT_INIT(&ALV.pt);
+	// threads context init
+	PT_INIT(&ALV.rx_pt);
+	PT_INIT(&ALV.tx_pt);
 
 	// variables init
 	ALV.anti_bounce = 0;
@@ -237,10 +274,12 @@ void ALV_init(void)
 	ALV.cur_mnt = 0;
 	ALV.time_out = ALV_TIME_INTERVAL;
 
+	FIFO_init(&ALV.in_fifo, &ALV.buf, QUEUE_SIZE, sizeof(ALV.buf[0]));
+
 	// register own call-back for specific commands
 	ALV.interf.channel = 9;
 	ALV.interf.cmde_mask = _CM(FR_STATE);
-	ALV.interf.rx = ALV_dpt_rx;
+	ALV.interf.queue = &ALV.in_fifo;
 	DPT_register(&ALV.interf);
 }
 
@@ -248,6 +287,9 @@ void ALV_init(void)
 // ALIVE module run method
 void ALV_run(void)
 {
+	// handle response if any
+	(void)PT_SCHEDULE(ALV_rx(&ALV.rx_pt));
+
 	// send response if any
-	(void)PT_SCHEDULE(ALV_pt(&ALV.pt));
+	(void)PT_SCHEDULE(ALV_tx(&ALV.tx_pt));
 }

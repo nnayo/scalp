@@ -1,9 +1,9 @@
 //---------------------
-//  Copyright (C) 2000-2008  <Yann GOUY>
+//  Copyright (C) 2000-2009  <Yann GOUY>
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
-//  the Free Software Foundation; either version 2 of the License, or
+//  the Free Software Foundation; either version 3 of the License, or
 //  (at your option) any later version.
 //
 //  This program is distributed in the hope that it will be useful,
@@ -69,8 +69,6 @@ static struct {
 	dpt_frame_t in_buf[NB_IN];	// incoming frames buffer
 
 	dpt_frame_t out;			// out going frame
-	//fifo_t out_fifo;			// outgoing frames fifo
-	//dpt_frame_t out_buf[NB_IN];	// outgoing frames buffer
 
 	u8 tmp;						// all purpose temporary buffer
 
@@ -101,8 +99,9 @@ static PT_THREAD( DNA_scan_free(pt_t* pt) )
 		DNA.out.dest = DNA.tmp;
 		DNA.out.resp = 0;
 		DNA.out.error = 0;
-		DNA.out.nat = 0;
 		DNA.out.cmde = FR_I2C_READ;
+		DNA.out.eth = 0;
+		DNA.out.serial = 0;
 
 		// then send frame
 		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
@@ -156,8 +155,9 @@ static PT_THREAD( DNA_scan_bs(pt_t* pt) )
 		DNA.out.dest = DNA.tmp;
 		DNA.out.resp = 0;
 		DNA.out.error = 0;
-		DNA.out.nat = 0;
 		DNA.out.cmde = FR_I2C_READ;
+		DNA.out.eth = 0;
+		DNA.out.serial = 0;
 
 		// then send frame
 		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
@@ -225,8 +225,9 @@ static PT_THREAD( DNA_list_updater(pt_t* pt) )
 	DNA.out.orig = DNA_SELF_ADDR(DNA.list);
 	DNA.out.resp = 0;
 	DNA.out.error = 0;
-	DNA.out.nat = 0;
 	DNA.out.argv[3] = 0x00;
+	DNA.out.eth = 0;
+	DNA.out.serial = 0;
 	
 	if ( DNA.index < DNA_LIST_SIZE ) {
 		// compose a FR_LINE command
@@ -273,6 +274,9 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 
 	// if frame is a response
 	if ( fr.resp ) {
+		// unlock the channel
+		DPT_unlock(&DNA.interf);
+
 		// ignore it and wait next frame
 		PT_RESTART(pt);
 	}
@@ -281,20 +285,15 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 	DNA.out.dest = fr.orig;
 	DNA.out.orig = DNA_SELF_ADDR(DNA.list);
 	DNA.out.t_id = fr.t_id;
+	DNA.out.cmde = fr.cmde;
 	DNA.out.resp = 1;
 	DNA.out.error = 0;
-	DNA.out.nat = fr.nat;
-	DNA.out.cmde = fr.cmde;
+	DNA.out.eth = fr.eth;
+	DNA.out.serial = fr.serial;
 	DNA.out.argv[0] = 0x00;
 	DNA.out.argv[1] = 0x00;
 	DNA.out.argv[2] = 0x00;
 	DNA.out.argv[3] = 0x00;
-
-	// if list updating isn't running
-	if ( DNA.index >= DNA_LIST_SIZE ) {
-		// lock the channel
-		DPT_lock(&DNA.interf);
-	}
 
 	switch (fr.cmde) {
 		case FR_REGISTER:
@@ -416,7 +415,8 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 	DNA.out.cmde = FR_REGISTER;
 	DNA.out.resp = 0;
 	DNA.out.error = 0;
-	DNA.out.nat = 0;
+	DNA.out.eth = 0;
+	DNA.out.serial = 0;
 	DNA.out.argv[0] = DNA_SELF_ADDR(DNA.list);
 	DNA.out.argv[1] = DNA_SELF_TYPE(DNA.list);
 	PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK );
@@ -437,7 +437,8 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 			DNA.out.cmde = FR_RECONF_FORCE_MODE;
 			DNA.out.resp = 0;
 			DNA.out.error = 0;
-			DNA.out.nat = 0;
+			DNA.out.eth = 0;
+			DNA.out.serial = 0;
 			DNA.out.argv[0] = 0x00;	// set
 			DNA.out.argv[1] = 0x02;	// NONE
 			PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK );
@@ -463,6 +464,9 @@ static PT_THREAD( DNA_is(pt_t* pt) )
 
 	// wait incoming commands
 	PT_WAIT_UNTIL(pt, OK == FIFO_get(&DNA.in_fifo, &fr));
+
+	// immediatly release the channel
+	DPT_unlock(&DNA.interf);
 
 	// if frame is a response
 	if ( fr.resp ) {
@@ -499,13 +503,6 @@ static PT_THREAD( DNA_is(pt_t* pt) )
 }
 
 
-static void DNA_rx(dpt_frame_t* fr)
-{
-	// save received frame
-	FIFO_put(&DNA.in_fifo, fr);
-}
-
-
 //--------------------------------------
 // public variables
 //
@@ -531,7 +528,7 @@ void DNA_init(dna_t mode)
 	// register to the dispatcher
 	DNA.interf.channel = 2;
 	DNA.interf.cmde_mask = _CM(FR_REGISTER) | _CM(FR_LIST) | _CM(FR_LINE) | _CM(FR_I2C_WRITE) | _CM(FR_I2C_READ);
-	DNA.interf.rx = DNA_rx;
+	DNA.interf.queue = &DNA.in_fifo;
 	DPT_register(&DNA.interf);
 
 	// the channel will be locked
@@ -541,8 +538,7 @@ void DNA_init(dna_t mode)
 	DPT_lock(&DNA.interf);
 
 	// set fifoes
-	FIFO_init(&DNA.in_fifo, DNA.in_buf, NB_IN, sizeof(dpt_frame_t));
-	//FIFO_init(&DNA.out_fifo, DNA.out_buf, NB_OUT, sizeof(dpt_frame_t));
+	FIFO_init(&DNA.in_fifo, &DNA.in_buf, NB_IN, sizeof(DNA.in_buf[0]));
 }
 
 

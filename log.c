@@ -1,3 +1,24 @@
+//---------------------
+//  Copyright (C) 2000-2009  <Yann GOUY>
+//
+//  This program is free software; you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation; either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program; see the file COPYING.  If not, write to
+//  the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+//  Boston, MA 02111-1307, USA.
+//
+//  you can write to me at <yann_gouy@yahoo.fr>
+//
+
 #include "scalp/log.h"
 
 #include "scalp/dispatcher.h"
@@ -23,11 +44,9 @@
 //
 
 typedef struct {
-	u8	index:4;		// log index (unique for each log session)
-	u8	orig:4;			// i2c origin address
+	u8	index;			// log index (unique for each log session)
 	u8	time[2];		// middle octets of the TIME (2.56 ms resol / 46.6 h scale)
-	u8	cmde;			// frame cmde
-	u8	argv[DPT_ARGC - 1];	// and its first parameters
+	dpt_frame_t fr;		// complete frame
 } log_t;
 
 
@@ -41,8 +60,8 @@ static struct {
 	pt_t	pt2;				// spawn context
 	pt_t	pt3;				// spawn context
 
-	fifo_t	fifo;				// fifo
-	dpt_frame_t buf[NB_FRAMES];	// data fifo buffer
+	fifo_t	in_fifo;			// reception fifo
+	dpt_frame_t in_buf[NB_FRAMES];
 
 	dpt_frame_t fr_in;			// incoming frame
 	dpt_frame_t fr_out;			// outgoing frame
@@ -52,7 +71,6 @@ static struct {
 
 	u16	addr;					// address in eeprom
 	u8	index;					// session index
-	volatile u8 rxed;			// flag for signaling incoming frame
 } LOG;
 
 
@@ -141,8 +159,6 @@ static PT_THREAD( LOG_write(pt_t* pt) )
 	PT_WAIT_UNTIL(pt, OK == DPT_tx(&LOG.interf, &LOG.fr_out));
 
 	// wait for the response
-	LOG.rxed = KO;
-	PT_WAIT_UNTIL(pt, OK == LOG.rxed);
 
 	PT_END(pt);
 }
@@ -150,15 +166,23 @@ static PT_THREAD( LOG_write(pt_t* pt) )
 
 static PT_THREAD( LOG_find_start(pt_t* pt) )
 {
+	u16 addr;
 	PT_BEGIN(pt);
 
+	PT_WAIT_UNTIL(pt, FIFO_get(&LOG.in_fifo , &LOG.fr_out));
+
+	// during the search for the log start,
+	// eeprom read response frames must received and treated
+	addr = LOG.fr_out.argv[0] << 8;
+	addr += LOG.fr_out.argv[1] << 0;
+
+	if ( (LOG.fr_out.cmde == FR_EEP_READ) && LOG.fr_out.resp && (LOG.addr == addr) ) {
+		// as it is not an event to log, quit
+		PT_RESTART(pt);
+	}
+
 	// read the 2 first octets of the log at LOG.addr
-	LOG.fr_out.dest = DPT_SELF_ADDR;
-	LOG.fr_out.orig = DPT_SELF_ADDR;
-	LOG.fr_out.resp = 0;
-	LOG.fr_out.error = 0;
-	LOG.fr_out.nat = 0;
-	LOG.fr_out.cmde = FR_EEP_READ;
+	DPT_HEADER(LOG.fr_out, DPT_SELF_ADDR, DPT_SELF_ADDR, FR_EEP_READ, 0, 0, 0, 0)
 	LOG.fr_out.argv[0] = (u8)((LOG.addr & 0xff00) >> 8);
 	LOG.fr_out.argv[1] = (u8)((LOG.addr & 0x00ff) >> 0);
 
@@ -203,6 +227,7 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 		u32 full;
 		u8 part[4];
 	} time;
+	u16 addr;
 
 	PT_BEGIN(pt);
 
@@ -214,8 +239,19 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 	}
 
 	// wait while no frame is present in the fifo
-	PT_WAIT_WHILE(pt, KO == FIFO_get(&LOG.fifo, &LOG.fr_filter));
+	PT_WAIT_WHILE(pt, KO == FIFO_get(&LOG.in_fifo, &LOG.fr_filter));
 
+	// but during the search for the log start,
+	// eeprom read response frames must received and treated
+	addr = LOG.fr_filter.argv[0] << 8;
+	addr += LOG.fr_filter.argv[1] << 0;
+
+	// and during the logging,
+	// eeprom write response frames must be received and treated
+	if ( (LOG.fr_filter.cmde == FR_EEP_WRITE) && LOG.fr_filter.resp && (LOG.addr == addr) ) {
+		// as it is not an event to log, quit
+		PT_RESTART(pt);
+	}
 	// if it is a log command
 	if ( (LOG.fr_filter.cmde == FR_LOG_CMD) && (!LOG.fr_filter.resp) ) {
 		// treat it
@@ -236,12 +272,7 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 
 	// the log packet will be sent by pieces of 2 octets
 	// the header remains the same for all writes
-	LOG.fr_out.dest = DPT_SELF_ADDR;
-	LOG.fr_out.orig = DPT_SELF_ADDR;
-	LOG.fr_out.resp = 0;
-	LOG.fr_out.error = 0;
-	LOG.fr_out.nat = 0;
-	LOG.fr_out.cmde = FR_EEP_WRITE;
+	DPT_HEADER(LOG.fr_out, DPT_SELF_ADDR, DPT_SELF_ADDR, FR_EEP_WRITE, 0, 0, 0, 0)
 
 	// first, index, orig and cmde fields
 	LOG.fr_out.argv[0] = (u8)((LOG.addr & 0xff00) >> 8);
@@ -292,44 +323,29 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 }
 
 
-static void LOG_rx(dpt_frame_t* fr)
+static PT_THREAD( LOG_main(pt_t* pt) )
 {
-	u16 addr;
+	PT_BEGIN(pt);
 
-	// only some frames are interessing
-	//
-	// so they have to be filtered
-	//
-	// but during the search for the log start,
-	// eeprom read response frames must received and treated
-	addr = fr->argv[0] << 8;
-	addr += fr->argv[1] << 0;
+	DPT_lock(&LOG.interf);
 
-	//if ( ( (fr->cmde & (FR_RESP|FR_EEP_READ)) == (FR_RESP|FR_EEP_READ) )
-	if ( (fr->cmde == FR_EEP_READ) && fr->resp && (LOG.addr == addr) ) {
-		// store and signal it
-		LOG.fr_in = *fr;
-		LOG.rxed = OK;
+	// first, find the end of the last recent used log
+	PT_SPAWN(pt, &LOG.pt2, LOG_find_start(&LOG.pt2));
 
-		// as it is not an event to log, quit
-		return;
-	}
+	// then start logging the frames
+	LOG.interf.cmde_mask = _CM(FR_STATE)
+				| _CM(FR_TIME_GET)
+				| _CM(FR_MUX_POWER)
+				| _CM(FR_RECONF_FORCE_MODE)
+				| _CM(FR_MINUT_TAKE_OFF)
+				| _CM(FR_MINUT_DOOR_CMD)
+				| _CM(FR_SURV_PWR_CMD)
+				| MINIMAL_FILTER;
+	PT_SPAWN(pt, &LOG.pt2, LOG_log(&LOG.pt2));
 
-	// and during the logging,
-	// eeprom write response frames must received and treated
-	//if ( ( (fr->cmde & (FR_RESP|FR_EEP_WRITE)) == (FR_RESP|FR_EEP_WRITE) )
-	if ( (fr->cmde == FR_EEP_WRITE) && fr->resp && (LOG.addr == addr) ) {
-		// store and signal it
-		LOG.fr_in = *fr;
-		LOG.rxed = OK;
+	DPT_unlock(&LOG.interf);
 
-		// as it is not an event to log, quit
-		return;
-	}
-
-	// remaining frames are to enqueued
-	// as the dispatcher is the filter
-	FIFO_put(&LOG.fifo, fr);
+	PT_END(pt);
 }
 
 
@@ -342,7 +358,7 @@ void LOG_init(void)
 {
 	// init context and fifo
 	PT_INIT(&LOG.pt);
-	FIFO_init(&LOG.fifo, LOG.buf, NB_FRAMES, sizeof(dpt_frame_t));
+	FIFO_init(&LOG.in_fifo, &LOG.in_buf, NB_FRAMES, sizeof(LOG.in_buf[0]));
 
 	// reset scan start address and index
 	LOG.addr = START_ADDR;
@@ -353,7 +369,7 @@ void LOG_init(void)
 	// no event shall be logged
 	LOG.interf.channel = 6;
 	LOG.interf.cmde_mask = MINIMAL_FILTER;
-	LOG.interf.rx = LOG_rx;
+	LOG.interf.queue = &LOG.in_fifo;
 	DPT_register(&LOG.interf);
 
 	LOG.enable = FALSE;
@@ -361,27 +377,7 @@ void LOG_init(void)
 
 
 // log run method
-u8 LOG_run(void)
+void LOG_run(void)
 {
-	PT_BEGIN(&LOG.pt);
-
-	DPT_lock(&LOG.interf);
-
-	// first, find the end of the last recent used log
-	PT_SPAWN(&LOG.pt, &LOG.pt2, LOG_find_start(&LOG.pt2));
-
-	// then start logging the frames
-	LOG.interf.cmde_mask = _CM(FR_STATE)
-				| _CM(FR_TIME_GET)
-				| _CM(FR_MUX_POWER)
-				| _CM(FR_RECONF_FORCE_MODE)
-				| _CM(FR_MINUT_TAKE_OFF)
-				| _CM(FR_MINUT_DOOR_CMD)
-				| _CM(FR_SURV_PWR_CMD)
-				| MINIMAL_FILTER;
-	PT_SPAWN(&LOG.pt, &LOG.pt2, LOG_log(&LOG.pt2));
-
-	DPT_unlock(&LOG.interf);
-
-	PT_END(&LOG.pt);
+	(void)PT_SCHEDULE(LOG_main(&LOG.pt));
 }

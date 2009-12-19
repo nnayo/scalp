@@ -1,3 +1,24 @@
+//---------------------
+//  Copyright (C) 2000-2009  <Yann GOUY>
+//
+//  This program is free software; you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation; either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program; see the file COPYING.  If not, write to
+//  the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+//  Boston, MA 02111-1307, USA.
+//
+//  you can write to me at <yann_gouy@yahoo.fr>
+//
+
 #include "scalp/basic.h"
 
 #include "scalp/dispatcher.h"
@@ -25,18 +46,18 @@
 //
 
 static struct {
-	dpt_interface_t interf;			// dispatcher interface
+	dpt_interface_t interf;				// dispatcher interface
 	u32	time_out;
 
 	// for incoming frames
-	pt_t	pt_in;				// proto-thread context
-	fifo_t	fifo_in;			// fifo
-	dpt_frame_t buf_in[NB_IN_FRAMES];	// buffer
+	pt_t	in_pt;						// proto-thread context
+	fifo_t	in_fifo;					// fifo
+	dpt_frame_t in_buf[NB_IN_FRAMES];	// buffer
 
 	// for response frames
-	pt_t	pt_out;				// context
-	fifo_t	fifo_out;			// fifo
-	dpt_frame_t buf_out[NB_OUT_FRAMES];	// buffer
+	pt_t	out_pt;						// context
+	fifo_t	out_fifo;					// fifo
+	dpt_frame_t out_buf[NB_OUT_FRAMES];	// buffer
 	dpt_frame_t out;
 } BSC;
 
@@ -52,9 +73,15 @@ void BSC_frame_handling(dpt_frame_t* fr)
 	u8 i;
 	dpt_frame_t resp;		// response frame
 	dpt_frame_t cont_fr;	// contained frame
-	volatile u16* addr;
+	u16* addr;
 	u16 data = 0;
 	u32 time, delay;
+
+	// if receiving a response or an error frame
+	if ( fr->resp | fr->error ) {
+		// ignore it
+		return;
+	}
 
 	// build response frame header
 	resp.dest = fr->orig;
@@ -62,8 +89,9 @@ void BSC_frame_handling(dpt_frame_t* fr)
 	resp.t_id = fr->t_id;
 	resp.resp = 1;
 	resp.error = fr->error;
-	resp.nat = fr->nat;
 	resp.cmde = fr->cmde;
+	resp.eth = fr->eth;
+	resp.serial = fr->serial;
 
 	// and copy the 2 first argv values (in most cases, it's a time win)
 	resp.argv[0] = fr->argv[0];
@@ -96,7 +124,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 
 		case FR_EEP_READ:
 			// read data
-			eeprom_read_block(&data, (const void *)addr, sizeof(u16));
+			eeprom_read_block(&data, (void*)addr, sizeof(u16));
 			break;
 
 		case FR_EEP_WRITE:
@@ -107,7 +135,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 			eeprom_write_block(&data, (void*)addr, sizeof(u16));
 
 			// read back data
-			eeprom_read_block(&data, (const void *)addr, sizeof(u16));
+			eeprom_read_block(&data, (void *)addr, sizeof(u16));
 			break;
 
 		case FR_FLH_READ:
@@ -152,7 +180,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 						eeprom_read_block(&cont_fr, (const void *)((u8*)addr + i * sizeof(dpt_frame_t)), sizeof(dpt_frame_t));
 
 						// enqueue the contained frame
-						FIFO_put(&BSC.fifo_out, &cont_fr);
+						FIFO_put(&BSC.out_fifo, &cont_fr);
 					}
 					break;
 
@@ -163,7 +191,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 						cont_fr = *((dpt_frame_t *)((u8*)addr + i * sizeof(dpt_frame_t)));
 
 						// enqueue the contained frame
-						FIFO_put(&BSC.fifo_out, &cont_fr);
+						FIFO_put(&BSC.out_fifo, &cont_fr);
 					}
 					break;
 
@@ -174,7 +202,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 						memcpy_P(&cont_fr, (const void *)((u8*)addr + i * sizeof(dpt_frame_t)), sizeof(dpt_frame_t));
 
 						// enqueue the contained frame
-						FIFO_put(&BSC.fifo_out, &cont_fr);
+						FIFO_put(&BSC.out_fifo, &cont_fr);
 					}
 					break;
 
@@ -188,7 +216,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 					eeprom_read_block(&cont_fr, (const void *)((u8*)addr + fr->argv[3] * sizeof(dpt_frame_t)), sizeof(dpt_frame_t));
 
 					// enqueue the contained frame
-					FIFO_put(&BSC.fifo_out, &cont_fr);
+					FIFO_put(&BSC.out_fifo, &cont_fr);
 					break;
 
 				default:
@@ -212,24 +240,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 	resp.argv[3] = (data & 0x00ff) >> 0;
 
 	// enqueue response
-	FIFO_put(&BSC.fifo_out, &resp);
-}
-
-
-// basic receive function
-static void BSC_rx(dpt_frame_t* fr)
-{
-	// if receiving a response or an error frame
-	if ( fr->resp | fr->error ) {
-		// ignore it
-		return;
-	}
-
-	// lock the dispatcher
-	DPT_lock(&BSC.interf);
-
-	// enqueue received frame
-	FIFO_put(&BSC.fifo_in, fr);
+	FIFO_put(&BSC.out_fifo, &resp);
 }
 
 
@@ -240,7 +251,7 @@ PT_THREAD(BSC_in(pt_t* pt))
 	PT_BEGIN(pt);
 
 	// dequeue the incomed frame if any
-	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.fifo_in, &fr));
+	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.in_fifo, &fr));
 
 	// frame interpretation
 	BSC_frame_handling(&fr);
@@ -265,13 +276,13 @@ PT_THREAD(BSC_out(pt_t* pt))
 	PT_BEGIN(pt);
 
 	// if no more response is available
-	if ( FIFO_full(&BSC.fifo_out) == 0 ) {
+	if ( FIFO_full(&BSC.out_fifo) == 0 ) {
 		// unlock the dispatcher
 		DPT_unlock(&BSC.interf);
 	}
 
 	// dequeue the response frame if any
-	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.fifo_out, &BSC.out));
+	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.out_fifo, &BSC.out));
 
 	// if the last handled frame was a wait one
 	// no other one will be sent before the time-out elapses
@@ -297,12 +308,12 @@ void BSC_init(void)
 	dpt_frame_t fr;
 
 	// fifoes init
-	FIFO_init(&BSC.fifo_in, BSC.buf_in, NB_IN_FRAMES, sizeof(dpt_frame_t));
-	FIFO_init(&BSC.fifo_out, BSC.buf_out, NB_OUT_FRAMES, sizeof(dpt_frame_t));
+	FIFO_init(&BSC.in_fifo, &BSC.in_buf, NB_IN_FRAMES, sizeof(dpt_frame_t));
+	FIFO_init(&BSC.out_fifo, &BSC.out_buf, NB_OUT_FRAMES, sizeof(dpt_frame_t));
 
 	// thread init
-	PT_INIT(&BSC.pt_in);
-	PT_INIT(&BSC.pt_out);
+	PT_INIT(&BSC.in_pt);
+	PT_INIT(&BSC.out_pt);
 
 	// reset time-out
 	BSC.time_out = 0;
@@ -318,14 +329,14 @@ void BSC_init(void)
 				| _CM(FR_FLH_WRITE)
 				| _CM(FR_WAIT)
 				| _CM(FR_CONTAINER);
-	BSC.interf.rx = BSC_rx;
+	BSC.interf.queue = &BSC.in_fifo;
 	DPT_register(&BSC.interf);
 
 	// read reset frame
 	eeprom_read_block(&fr, (const void *)0x00, sizeof(dpt_frame_t));
 
 	// enqueue the reset frame
-	FIFO_put(&BSC.fifo_out, &fr);
+	FIFO_put(&BSC.out_fifo, &fr);
 
 	// lock the dispatcher to be able to treat the frame
 	DPT_lock(&BSC.interf);
@@ -335,8 +346,8 @@ void BSC_init(void)
 void BSC_run(void)
 {
 	// incoming frames handling
-	(void)PT_SCHEDULE(BSC_in(&BSC.pt_in));
+	(void)PT_SCHEDULE(BSC_in(&BSC.in_pt));
 
 	// reponse frames handling
-	(void)PT_SCHEDULE(BSC_out(&BSC.pt_out));
+	(void)PT_SCHEDULE(BSC_out(&BSC.out_pt));
 }

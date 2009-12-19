@@ -1,4 +1,22 @@
-// GPL v3 : copyright Yann GOUY
+//---------------------
+//  Copyright (C) 2000-2009  <Yann GOUY>
+//
+//  This program is free software; you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation; either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program; see the file COPYING.  If not, write to
+//  the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+//  Boston, MA 02111-1307, USA.
+//
+//  you can write to me at <yann_gouy@yahoo.fr>
 //
 
 #include "scalp/time_sync.h"
@@ -14,6 +32,8 @@
 // private defines
 //
 
+#define QUEUE_SIZE		11
+
 
 //----------------------------------------
 // private variables
@@ -22,38 +42,21 @@
 static struct {
 	dpt_interface_t interf;		// dispatcher interface
 
-	pt_t pt;			// thread context
+	pt_t pt;					// thread context
 
-	dpt_frame_t fr;			// a buffer frame
-	volatile u8 rxed;		// flag set to OK when frame is rxed
+	dpt_frame_t fr;				// a buffer frame
 
 	u32 time_out;
 	s8 time_correction;
+
+	fifo_t queue;				// reception queue
+	dpt_frame_t buf[QUEUE_SIZE];
 } TSN;
 
 
 //----------------------------------------
 // private functions
 //
-
-static void TSN_dpt_rx(dpt_frame_t* fr)
-{
-	// if not a time response
-	if ( !(fr->cmde == FR_TIME_GET) && fr->resp ) {
-		// throw it away
-		return;
-	}
-
-	// if frame buffer is free
-	if ( TSN.rxed == KO ) {
-		// prevent overwrite
-		TSN.rxed = OK;
-
-		// save incoming frame
-		TSN.fr = *fr;
-	}
-}
-
 
 static PT_THREAD( TSN_pt(pt_t* pt) )
 {
@@ -78,10 +81,11 @@ static PT_THREAD( TSN_pt(pt_t* pt) )
 	// build the time request
 	TSN.fr.orig = DNA_SELF_ADDR(list);
 	TSN.fr.dest = DNA_BC_ADDR(list);
+	TSN.fr.cmde = FR_TIME_GET;
 	TSN.fr.resp = 0;
 	TSN.fr.error = 0;
-	TSN.fr.nat = 0;
-	TSN.fr.cmde = FR_TIME_GET;
+	TSN.fr.eth = 0;
+	TSN.fr.serial = 0;
 
 	// send the time request
 	DPT_lock(&TSN.interf);
@@ -89,10 +93,10 @@ static PT_THREAD( TSN_pt(pt_t* pt) )
 	DPT_unlock(&TSN.interf);
 
 	// wait for the answer
-	PT_WAIT_UNTIL(pt, OK == TSN.rxed);
+	PT_WAIT_UNTIL(pt, FIFO_get(&TSN.queue, &TSN.fr));
 
-	// permit to receive another frame
-	TSN.rxed = KO;
+	// immediatly unlock
+	DPT_unlock(&TSN.interf);
 
 	// rebuild remote time (AVR is little endian)
 	remote_time.part[0] = TSN.fr.argv[3];
@@ -137,15 +141,15 @@ void TSN_init(void)
 	PT_INIT(&TSN.pt);
 
 	// variables init
-	TSN.rxed = KO;
 	TSN.time_correction = 0;
 	TSN.time_out = TIME_1_SEC;
 	TIME_set_incr(10 * TIME_1_MSEC);
+	FIFO_init(&TSN.queue, &TSN.buf, QUEUE_SIZE, sizeof(TSN.buf) / sizeof(TSN.buf[0]));
 
-	// register own call-back for specific commands
+	// register to dispatcher
 	TSN.interf.channel = 8;
 	TSN.interf.cmde_mask = _CM(FR_TIME_GET);
-	TSN.interf.rx = TSN_dpt_rx;
+	TSN.interf.queue = &TSN.queue;
 	DPT_register(&TSN.interf);
 }
 
