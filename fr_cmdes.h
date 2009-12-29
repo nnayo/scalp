@@ -12,21 +12,21 @@ typedef enum {
 	FR_I2C_READ,				// 0x00 : I2C protocol read
 	// argv #0:
 	//	- number of octets to be read
-	// argv #1, #2, #3 :
+	// argv #1, ..., #(FRAME_NB_ARGS - 1) :
 	// 	- used if necessary
 
 	FR_I2C_WRITE,				// 0x01 : I2C protocol write
 	// no response frame will be received on success
 	// argv #0:
-	// 	- number of octets to be written (from 0 to 3)
-	// argv #1, #2, #3 :
+	// 	- number of octets to be written (from 0 to (FRAME_NB_ARGS - 1))
+	// argv #1, ..., #(FRAME_NB_ARGS - 1) :
 	// 	- used if necessary
 
 	// ---------------------------------
 	// basic services
 	//
 
-	FR_NO_CMDE,				// 0x02 : no command
+	FR_NO_CMDE,					// 0x02 : no command
 	// no arg
 
 	FR_RAM_READ,				// 0x03 : RAM read
@@ -73,6 +73,18 @@ typedef enum {
 	// argv #2, #3 :
 	// 	- in cmde, data to be written
 	// 	- in resp, data read back
+
+	FR_SPI_READ,				// I2C protocol read
+	// argv #0:
+	//	- number of octets to be read
+	// argv #1, ..., #(FRAME_NB_ARGS - 1) :
+	// 	- used if necessary
+
+	FR_SPI_WRITE,				// I2C protocol write
+	// argv #0:
+	//	- number of octets to be written
+	// argv #1, ..., #(FRAME_NB_ARGS - 1) :
+	// 	- used if necessary
 
 	FR_WAIT,				// 0x09 : wait some time given in ms
 	// argv #0,#1 value :
@@ -262,22 +274,22 @@ typedef enum {
 	//
 
 	FR_LOG_CMD,					// 0x1a : modify logging setup
-	// argv #0 value :
+	// argv #0 cmde :
 	// 	- 0x00 : off
-	// 	- 0xfa : ON to sdcard
-	// 	- 0xfe : ON to eeprom
-	// 	- 0xa1 : AND filter MSB value with current MSB value
-	// 	- 0xa0 : AND filter LSB value with current LSB value
-	// 	- 0x51 : OR filter MSB value with current MSB value
-	// 	- 0x50 : OR filter LSB value with current LSB value
-	// argv #1 value :
-	//  - 0xVV : MSB part of the filter
-	// argv #2 value :
-	//  - 0xVV : part of the filter
-	// argv #3 value :
-	//  - 0xVV : part of the filter
-	// argv #4 value :
-	//  - 0xVV : LSB part of the filter
+	// 	- 0x1a : ON to sdcard
+	// 	- 0x1e : ON to eeprom
+	// 	- 0x27 : set command filter LSB part (bitfield for AND mask)
+	// 		- argv #1 - #3 value : filter value (MSB first)
+	// 	- 0x28 : set command filter MSB part (bitfield for AND mask)
+	// 		- argv #1 - #3 value : filter value (MSB first)
+	// 	- 0x2e : get command filter LSB part
+	// 		- argv #1 - #3 resp : filter value (MSB first)
+	// 	- 0x2f : get command filter MSB part
+	// 		- argv #1 - #3 resp : filter value (MSB first)
+	// 	- 0x3c : set origin filter (6 values : 0x00 logs from all nodes, 0xVV logs from given node, 0xff doesn't log)
+	// 		- argv #1 - #6 value : filter value
+	// 	- 0x3f : get origin filter
+	// 		- argv #1 - #6 resp : filter value
 
 
 	FR_ROUT_LIST,				// : number of set routes
@@ -299,8 +311,36 @@ typedef enum {
 	// argv #1 request : routed address
 	// argv #2 response : result OK (1) or ko (0)
 
-	FR_SPI_WRITE,
-	FR_SPI_READ,
+	FR_DATA_ACC,				// acceleration data
+	// argv #0 - #1 : MSB - LSB X acceleration
+	// argv #2 - #3 : MSB - LSB Y acceleration
+	// argv #4 - #5 : MSB - LSB Z acceleration
+
+	FR_DATA_PRES,				// pressure data
+	// argv #0 - #1 : MSB - LSB x10 pressure with offset
+	// argv #2 - #3 : MSB - LSB raw pressure
+
+	FR_DATA_IO,					// IO
+	// argv #0 : IO bits value
+
+	FR_DATA_ADC0,				// ADC values
+	// argv #0 - #1 : MSB - LSB ADC 0
+	// argv #2 - #3 : MSB - LSB ADC 1
+	// argv #4 - #5 : MSB - LSB ADC 2
+
+	FR_DATA_ADC3,				// ADC values
+	// argv #0 - #1 : MSB - LSB ADC 3
+	// argv #2 - #3 : MSB - LSB ADC 4
+	// argv #4 - #5 : MSB - LSB ADC 5
+
+	FR_DATA_ADC6,				// ADC values
+	// argv #0 - #1 : MSB - LSB ADC 6
+	// argv #2 - #3 : MSB - LSB ADC 7
+
+	FR_CPU,						// CPU usage
+	// argv #0 - #1 : MSB - LSB last 100 ms
+	// argv #2 - #3 : MSB - LSB max value
+	// argv #4 - #5 : MSB - LSB min value
 
 } fr_cmdes_t;
 
@@ -319,19 +359,6 @@ typedef enum {
 //	- streaming (ON/off)
 //	- mode (manuel/auto)
 //
-// data :
-//  - accelerations X/Y/Z
-//  - pressions x10/raw
-//  - IO (minuterie/XP)
-//  - status
-//  - ADC
-//  - CPU usage
-//
-//
-// log : save the whole frame (header included : to know the origin of the frame)
-// filters on :
-//  - command
-//  - origin
 
 // memory storage types for container frame
 #define EEPROM_STORAGE	0xee
