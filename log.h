@@ -33,8 +33,13 @@
 // configuration defines
 //
 
-#define START_ADDR	155		// the place before is reserved for event frames
-#define END_ADDR	1024	// end of eeprom memory
+// eeprom limits
+#define EEPROM_START_ADDR	((u16)155)		// the place before is reserved for event frames
+#define EEPROM_END_ADDR		((u16)1024)		// 1 Ko
+
+// sdcard limits
+#define SDCARD_START_ADDR	((u64)0x100)	// FAT headers
+#define SDCARD_END_ADDR		((u64)2 * 1024 * 1024 * 1024)	// 2 Go
 
 
 //--------------------------------------
