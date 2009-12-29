@@ -143,7 +143,7 @@ static u8 ROUT_del(const u8 virtual_addr, const u8 routed_addr)
 	return OK;
 }
 
-static PT_THREAD( ROUT_pt(pt_t* pt) )
+static PT_THREAD( ROUT_rout(pt_t* pt) )
 {
 	PT_BEGIN(pt);
 
@@ -182,7 +182,11 @@ static PT_THREAD( ROUT_pt(pt_t* pt) )
 	// and send the response
 	ROUT.fr.resp = 1;
 	PT_WAIT_UNTIL(pt, DPT_tx(&ROUT.interf, &ROUT.fr));
-	DPT_unlock(&ROUT.interf);
+
+	// unlock the channel if no more frame are unqueued
+	if ( !FIFO_free(&ROUT.in_fifo) ) {
+		DPT_unlock(&ROUT.interf);
+	}
 
 	// loop back for next frame
 	PT_RESTART(pt);
@@ -213,7 +217,7 @@ void ROUT_init(void)
 void ROUT_run(void)
 {
 	// just handle the frame requests
-	(void)PT_SCHEDULE(ROUT_pt(&ROUT.pt));
+	(void)PT_SCHEDULE(ROUT_rout(&ROUT.pt));
 }
 
 
