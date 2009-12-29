@@ -15,7 +15,7 @@ scalp	= [
 
 MCU_TARGET      = 'atmega324p'
 OPTIMIZE        = '-Os -mcall-prologues -fshort-enums '
-includes	= ['..', './nanoK']
+includes	= ['..', '../nanoK']
 CFLAGS		= '-g -Wall ' + OPTIMIZE + '-mmcu=' + MCU_TARGET
 
 env = Environment(
@@ -31,6 +31,6 @@ env.Library('scalp', scalp)
 env.Alias('clean', '', 'rm -f *~ *o libscalp.a')
 env.AlwaysBuild('clean')
 
-# suppress reliquat files
+# display sections size
 env.Alias('size', 'libscalp.a', 'avr-size -t libscalp.a')
 env.AlwaysBuild('size')
