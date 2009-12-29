@@ -32,7 +32,7 @@
 // private defines
 //
 
-#define QUEUE_SIZE		11
+#define QUEUE_SIZE		1
 
 
 //----------------------------------------
@@ -58,7 +58,7 @@ static struct {
 // private functions
 //
 
-static PT_THREAD( TSN_pt(pt_t* pt) )
+static PT_THREAD( TSN_tsn(pt_t* pt) )
 {
 	u32 local_time;
 	union {
@@ -93,7 +93,7 @@ static PT_THREAD( TSN_pt(pt_t* pt) )
 	DPT_unlock(&TSN.interf);
 
 	// wait for the answer
-	PT_WAIT_UNTIL(pt, FIFO_get(&TSN.queue, &TSN.fr));
+	PT_WAIT_UNTIL(pt, FIFO_get(&TSN.queue, &TSN.fr) && TSN.fr.resp);
 
 	// immediatly unlock
 	DPT_unlock(&TSN.interf);
@@ -158,5 +158,5 @@ void TSN_init(void)
 void TSN_run(void)
 {
 	// send response if any
-	(void)PT_SCHEDULE(TSN_pt(&TSN.pt));
+	(void)PT_SCHEDULE(TSN_tsn(&TSN.pt));
 }
