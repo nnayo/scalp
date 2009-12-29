@@ -52,7 +52,7 @@
 # define DPT_LAST_ADDR		0x7f		// last I2C address
 
 
-#define _CM(x)		(u64)(1L << (x))	// compute command mask
+#define _CM(x)		(u64)(1LL << (x))	// compute command mask
 
 
 //----------------------------------------
