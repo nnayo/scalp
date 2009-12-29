@@ -23,9 +23,10 @@
 
 #include "scalp/dispatcher.h"
 
-#include <avr/eeprom.h>
 #include <avr/pgmspace.h>
 #include <string.h>
+
+#include "drivers/eeprom.h"
 
 #include "utils/time.h"
 #include "utils/pt.h"
@@ -124,7 +125,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 
 		case FR_EEP_READ:
 			// read data
-			eeprom_read_block(&data, (void*)addr, sizeof(u16));
+			EEP_read((u16)addr, (u8*)&data, sizeof(u16));
 			break;
 
 		case FR_EEP_WRITE:
@@ -132,10 +133,14 @@ void BSC_frame_handling(dpt_frame_t* fr)
 			data = (fr->argv[2] << 8) + fr->argv[3];
 
 			// write data
-			eeprom_write_block(&data, (void*)addr, sizeof(u16));
+			EEP_write((u16)addr, (u8*)&data, sizeof(u16));
+
+			// check if writing is done
+			while ( OK != EEP_is_fini() )
+				;
 
 			// read back data
-			eeprom_read_block(&data, (void *)addr, sizeof(u16));
+			EEP_read((u16)addr, (u8*)&data, sizeof(u16));
 			break;
 
 		case FR_FLH_READ:
@@ -177,7 +182,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 					// for each frame in the container
 					for ( i = 0; i < fr->argv[2]; i++) {
 						// extract the frames from EEPROM
-						eeprom_read_block(&cont_fr, (const void *)((u8*)addr + i * sizeof(dpt_frame_t)), sizeof(dpt_frame_t));
+						EEP_read((u16)((u8*)addr + i * sizeof(dpt_frame_t)), (u8*)&cont_fr, sizeof(dpt_frame_t));
 
 						// enqueue the contained frame
 						FIFO_put(&BSC.out_fifo, &cont_fr);
@@ -213,7 +218,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 				case 0x04:
 				case 0x05:
 					// extract the frame from EEPROM
-					eeprom_read_block(&cont_fr, (const void *)((u8*)addr + fr->argv[3] * sizeof(dpt_frame_t)), sizeof(dpt_frame_t));
+					EEP_read((u16)((u8*)addr + fr->argv[3] * sizeof(dpt_frame_t)), (u8*)&cont_fr, sizeof(dpt_frame_t));
 
 					// enqueue the contained frame
 					FIFO_put(&BSC.out_fifo, &cont_fr);
@@ -332,8 +337,10 @@ void BSC_init(void)
 	BSC.interf.queue = &BSC.in_fifo;
 	DPT_register(&BSC.interf);
 
+	EEP_init();
+
 	// read reset frame
-	eeprom_read_block(&fr, (const void *)0x00, sizeof(dpt_frame_t));
+	EEP_read(0x00, (u8*)&fr, sizeof(dpt_frame_t));
 
 	// enqueue the reset frame
 	FIFO_put(&BSC.out_fifo, &fr);
