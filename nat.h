@@ -49,7 +49,7 @@
 
 // configuration flags to reduce memoy usage
 //#define NAT_ENABLE_RS
-#define NAT_ENABLE_ETH
+//#define NAT_ENABLE_ETH
 
 //----------------------------------------
 // public types
