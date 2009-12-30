@@ -28,7 +28,7 @@
 #include "utils/time.h"
 
 #include "drivers/eeprom.h"
-#include "drivers/twi.h"
+#include "externals/sdcard.h"
 
 #include "avr/io.h"
 
@@ -139,7 +139,7 @@ static void LOG_find_sdcard_start(u8 eeprom_index)
 	// scan the whole eeprom
 	while (1) {
 		// read the 2 first octets of the log at LOG.addr
-		//EEP_read(LOG.sdcard_addr, buf, sizeof(buf));
+		SD_read(LOG.sdcard_addr, buf, sizeof(buf));
 
 		// if the read octets are erased eeprom
 		if ( (buf[0] == 0xff) && (buf[1] == 0xff) ) {
@@ -352,6 +352,7 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 
 		case LOG_SDCARD:
 			// save it to sdcard (fill the write buffer)
+			PT_WAIT_UNTIL(pt, SD_write(LOG.sdcard_addr, (u8*)&LOG.block, sizeof(log_t)));
 
 			// wait until saving is done
 
