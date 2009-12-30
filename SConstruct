@@ -9,6 +9,7 @@ scalp	= [
 	'reconf.c',			\
 	'time_sync.c',		\
 	'routing_tables.c',	\
+	'cpu.c',			\
 ]
 
 
