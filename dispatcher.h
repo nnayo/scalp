@@ -42,7 +42,7 @@
 // public defines
 //
 
-# define DPT_CHAN_NB	10				// dispatcher available channels number
+# define DPT_CHAN_NB	12				// dispatcher available channels number
 
 # define DPT_ARGC		FRAME_NB_ARGS	// frame number of arguments
 
