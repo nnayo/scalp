@@ -139,8 +139,8 @@ static void DPT_dispatch(dpt_frame_t* fr)
 		mask.raw = DPT.channels[i]->cmde_mask;
 		mask.raw = mask.raw & _CM(cmde);
 		if ( mask.hi || mask.lo ) {
-			// enqueue it
-			if ( OK == FIFO_put(DPT.channels[i]->queue, fr) ) {
+			// enqueue it if a queue is available
+			if ( DPT.channels[i]->queue && (OK == FIFO_put(DPT.channels[i]->queue, fr)) ) {
 				// if a success, lock the channel
 				DPT.lock |= 1 << i;
 			}
