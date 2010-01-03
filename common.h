@@ -27,9 +27,8 @@ typedef enum {
 	FLYING,
 	WAIT_DOOR_OPEN,		// minuterie only
 	RECOVERY,
-	BUZZER,			// minuterie only
 	DOOR_OPENING,		// minuterie only
-	DOOR_OPEN,		// minuterie only
+	DOOR_OPEN,			// minuterie only
 	DOOR_CLOSING,		// minuterie only
 } cmn_state_t;
 

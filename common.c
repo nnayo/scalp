@@ -37,19 +37,16 @@
 #define OUT_SIZE	3
 #define IN_SIZE		1
 
-#define LED_PORT		PORTA
-#define LED_DDR			DDRA
-#define GREEN_LED		_BV(PA2)
-#define ORANGE_LED		_BV(PA1)
-#define RED_LED			_BV(PA0)
+#define LED_PORT		PORTD
+#define LED_DDR			DDRD
+#define GREEN_LED		_BV(PD2)
+#define ORANGE_LED		_BV(PD3)
 
 #define LED_STEP		(200 * TIME_1_MSEC)
 #define GREEN_BOTTOM	0
 #define GREEN_TOP		LED_STEP
 #define ORANGE_BOTTOM	GREEN_TOP
 #define ORANGE_TOP		(ORANGE_BOTTOM + LED_STEP)
-#define RED_BOTTOM		ORANGE_TOP
-#define RED_TOP			(RED_BOTTOM + LED_STEP)
 
 
 //--------------------------------------------
@@ -78,7 +75,6 @@ static struct {
 
 	u32 green_led_period;		// green led blinking period
 	u32 orange_led_period;		// orange led blinking period
-	u32 red_led_period;			// red led blinking period
 
 	u32 time;
 
@@ -211,15 +207,15 @@ static PT_THREAD( CMN_rx(pt_t* pt) )
 		case FR_MUX_POWER:
 			switch (CMN.fr_rsp.argv[0]) {
 				case 0xff:
-					// switch ON
-					// drive MOSFET P-channel gate to 0
-					PORTA &= ~_BV(PA7);
+					// reset PCA9543
+					// drive gate to 0
+					PORTD &= ~_BV(PD5);
 					break;
 
 				case 0x00:
-					// switch off
-					// drive MOSFET P-channel gate to 1
-					PORTA |= _BV(PA7);
+					// release PCA9543 reset pin
+					// drive gate to 1
+					PORTD |= _BV(PD5);
 					break;
 
 				default:
@@ -260,61 +256,51 @@ static PT_THREAD( CMN_blink(pt_t* pt) )
 		case READY:
 			CMN.green_led_period = 2 * TIME_1_SEC;
 			CMN.orange_led_period = TIME_MAX;
-			CMN.red_led_period = TIME_MAX;
 			break;
 
 		case WAIT_TAKE_OFF:
 			CMN.green_led_period = 500 * TIME_1_MSEC;
 			CMN.orange_led_period = TIME_MAX;
-			CMN.red_led_period = TIME_MAX;
 			break;
 
 		case WAIT_TAKE_OFF_CONF:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = 500 * TIME_1_MSEC;
-			CMN.red_led_period = TIME_MAX;
 			break;
 
 		case FLYING:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = 1 * TIME_1_SEC;
-			CMN.red_led_period = TIME_MAX;
 			break;
 
 		case WAIT_DOOR_OPEN:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = 250 * TIME_1_MSEC;
-			CMN.red_led_period = TIME_MAX;
 			break;
 
 		case RECOVERY:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = TIME_MAX;
-			CMN.red_led_period = 2 * TIME_1_SEC;
 			break;
 
 		case BUZZER:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = TIME_MAX;
-			CMN.red_led_period = 250 * TIME_1_MSEC;
 			break;
 
 		case DOOR_OPENING:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = TIME_MAX;
-			CMN.red_led_period = TIME_MAX;
 			break;
 
 		case DOOR_OPEN:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = TIME_MAX;
-			CMN.red_led_period = TIME_MAX;
 			break;
 
 		case DOOR_CLOSING:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = TIME_MAX;
-			CMN.red_led_period = TIME_MAX;
 			break;
 	}
 
@@ -331,12 +317,6 @@ static PT_THREAD( CMN_blink(pt_t* pt) )
 	b.bottom = ORANGE_BOTTOM;
 	blink_led(&b);
 	PT_YIELD(pt);
-
-	b.led = RED_LED;
-	b.pseudo_period = CMN.red_led_period;
-	b.top = RED_TOP;
-	b.bottom = RED_BOTTOM;
-	blink_led(&b);
 
 	PT_RESTART(pt);
 
@@ -365,7 +345,6 @@ void CMN_init(void)
 	CMN.bus = NONE;
 	CMN.green_led_period = TIME_MAX;
 	CMN.orange_led_period = TIME_MAX;
-	CMN.red_led_period = TIME_MAX;
 	CMN.time = 0;
 
 	// register own call-back for specific commands
@@ -375,11 +354,11 @@ void CMN_init(void)
 	DPT_register(&CMN.interf);
 
 	// set led port direction
-	LED_DDR |= GREEN_LED | ORANGE_LED | RED_LED;
+	LED_DDR |= GREEN_LED | ORANGE_LED;
 
 	// set I2C cmde direction and force the I2C bus low
-	DDRA |= _BV(PA7);
-	PORTA &= ~_BV(PA7);
+	DDRD |= _BV(PD5);
+	PORTD &= ~_BV(PD5);
 }
 
 
