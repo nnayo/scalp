@@ -142,10 +142,9 @@ typedef enum {
 	// 	- 0x03 : flying
 	// 	- 0x04 : waiting door open		(minuterie only)
 	// 	- 0x05 : recovery
-	// 	- 0x06 : buzzer				(minuterie only)
-	// 	- 0x07 : door opening asked		(minuterie only)
-	// 	- 0x08 : door open			(minuterie only)
-	// 	- 0x09 : door closing asked		(minuterie only)
+	// 	- 0x06 : door opening asked		(minuterie only)
+	// 	- 0x07 : door open			(minuterie only)
+	// 	- 0x08 : door closing asked		(minuterie only)
 	// argv #2 value :
 	// 	- bit 7 <=> nominal bus U0 OK
 	// 	- bit 6 <=> nominal bus U1 OK
