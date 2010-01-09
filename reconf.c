@@ -71,18 +71,18 @@ typedef enum {
 
 static struct {
 	pt_t in_pt;					// in thread
-	dpt_frame_t in;
+	frame_t in;
 	fifo_t in_fifo;
-	dpt_frame_t in_buf[QUEUE_SIZE];
+	frame_t in_buf[QUEUE_SIZE];
 	dpt_interface_t interf;
 
 	pt_t out_pt;				// out thread
-	dpt_frame_t out;
+	frame_t out;
 	fifo_t out_fifo;
-	dpt_frame_t out_buf[QUEUE_SIZE];
+	frame_t out_buf[QUEUE_SIZE];
 
 	pt_t scan_pt;				// scan thread
-	dpt_frame_t scan_bus;		// scan bus frame
+	frame_t scan_bus;		// scan bus frame
 	bus_t bus_force_mode;		// force bus mode
 	bus_t bus_curr_stat;		// current bus status
 	bus_t bus_prev_stat;		// previous bus status
@@ -208,17 +208,17 @@ static PT_THREAD( RCF_in(pt_t* pt) )
 	}
 
 	// force bus mode handling
-	else if ( RCF.in.cmde == FR_RECONF_FORCE_MODE ) {
+	else if ( RCF.in.cmde == FR_RECONF_MODE ) {
 		swap = RCF.in.orig;
 		RCF.in.orig = RCF.in.dest;
 		RCF.in.dest = swap;
 
 		switch (RCF.in.argv[0]) {
-			case 0x00:	// set force mode
+			case FR_RECONF_MODE_SET:	// set force mode
 				RCF.bus_force_mode = RCF.in.argv[1];
 				break;
 
-			case 0xff:	// get force mode
+			case FR_RECONF_MODE_GET:	// get force mode
 				RCF.in.argv[1] = RCF.bus_force_mode;
 				RCF.in.argv[2] = RCF.bus_curr_stat;
 				break;
@@ -267,7 +267,7 @@ void RCF_init(void)
 	PT_INIT(&RCF.in_pt);
 	FIFO_init(&RCF.in_fifo, &RCF.in_buf, QUEUE_SIZE, sizeof(RCF.in_buf[0]));
 	RCF.interf.channel = 1;
-	RCF.interf.cmde_mask = _CM(FR_MINUT_TAKE_OFF) | _CM(FR_RECONF_FORCE_MODE);
+	RCF.interf.cmde_mask = _CM(FR_MINUT_TAKE_OFF) | _CM(FR_RECONF_MODE);
 	RCF.interf.queue = &RCF.in_fifo;
 	DPT_register(&RCF.interf);
 

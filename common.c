@@ -80,16 +80,16 @@ static struct {
 
 	// outgoing fifo
 	fifo_t out;
-	dpt_frame_t out_buf[OUT_SIZE];
-	dpt_frame_t fr_out;			// a buffer frame
+	frame_t out_buf[OUT_SIZE];
+	frame_t fr_out;			// a buffer frame
 
 	// response handling
-	dpt_frame_t fr_rsp;			// a buffer frame
+	frame_t fr_rsp;			// a buffer frame
 
 	// incoming fifo
-	dpt_frame_t fr_in;			// a buffer frame
+	frame_t fr_in;			// a buffer frame
 	fifo_t in;
-	dpt_frame_t in_buf[IN_SIZE];
+	frame_t in_buf[IN_SIZE];
 
 	cmn_state_t state;			// board state
 	cmn_bus_state_t bus;		// bus state
@@ -160,7 +160,7 @@ static PT_THREAD( CMN_rx(pt_t* pt) )
 	switch (CMN.fr_rsp.cmde) {
 		case FR_STATE:
 			switch (CMN.fr_rsp.argv[0]) {
-				case 0x00:	// get state
+				case FR_STATE_GET:	// get state
 					// build the frame with the node state
 					CMN.fr_rsp.argv[1] = CMN.state;
 
@@ -168,7 +168,7 @@ static PT_THREAD( CMN_rx(pt_t* pt) )
 					CMN.fr_rsp.argv[2] = CMN.bus;
 					break;
 
-				case 0x7a:	// set state and bus
+				case FR_STATE_SET_BOTH:	// set state and bus
 					// save new node state
 					CMN.state = CMN.fr_rsp.argv[1];
 
@@ -176,12 +176,12 @@ static PT_THREAD( CMN_rx(pt_t* pt) )
 					CMN.bus = CMN.fr_rsp.argv[2];
 					break;
 
-				case 0x8b:	// set state only
+				case FR_STATE_SET_STATE:	// set state only
 					// save new node state
 					CMN.state = CMN.fr_rsp.argv[1];
 					break;
 
-				case 0x9c:	// set bus state only
+				case FR_STATE_SET_BUS:	// set bus state only
 					// save new bus state
 					CMN.bus = CMN.fr_rsp.argv[2];
 					break;
@@ -204,15 +204,15 @@ static PT_THREAD( CMN_rx(pt_t* pt) )
 			CMN.fr_rsp.argv[3] = time.part[0];
 			break;
 
-		case FR_MUX_POWER:
+		case FR_MUX_RESET:
 			switch (CMN.fr_rsp.argv[0]) {
-				case 0xff:
+				case FR_MUX_RESET_RESET:
 					// reset PCA9543
 					// drive gate to 0
 					PORTD &= ~_BV(PD5);
 					break;
 
-				case 0x00:
+				case FR_MUX_RESET_UNRESET:
 					// release PCA9543 reset pin
 					// drive gate to 1
 					PORTD |= _BV(PD5);
@@ -253,52 +253,47 @@ static PT_THREAD( CMN_blink(pt_t* pt) )
 
 	// led blinking periods depend on the flight phase
 	switch (CMN.state) {
-		case READY:
+		case FR_STATE_READY:
 			CMN.green_led_period = 2 * TIME_1_SEC;
 			CMN.orange_led_period = TIME_MAX;
 			break;
 
-		case WAIT_TAKE_OFF:
+		case FR_STATE_WAIT_TAKE_OFF:
 			CMN.green_led_period = 500 * TIME_1_MSEC;
 			CMN.orange_led_period = TIME_MAX;
 			break;
 
-		case WAIT_TAKE_OFF_CONF:
+		case FR_STATE_WAIT_TAKE_OFF_CONF:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = 500 * TIME_1_MSEC;
 			break;
 
-		case FLYING:
+		case FR_STATE_FLYING:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = 1 * TIME_1_SEC;
 			break;
 
-		case WAIT_DOOR_OPEN:
+		case FR_STATE_WAIT_DOOR_OPEN:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = 250 * TIME_1_MSEC;
 			break;
 
-		case RECOVERY:
+		case FR_STATE_RECOVERY:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = TIME_MAX;
 			break;
 
-		case BUZZER:
+		case FR_STATE_DOOR_OPENING:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = TIME_MAX;
 			break;
 
-		case DOOR_OPENING:
+		case FR_STATE_DOOR_OPEN:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = TIME_MAX;
 			break;
 
-		case DOOR_OPEN:
-			CMN.green_led_period = TIME_MAX;
-			CMN.orange_led_period = TIME_MAX;
-			break;
-
-		case DOOR_CLOSING:
+		case FR_STATE_DOOR_CLOSING:
 			CMN.green_led_period = TIME_MAX;
 			CMN.orange_led_period = TIME_MAX;
 			break;
@@ -349,7 +344,7 @@ void CMN_init(void)
 
 	// register own call-back for specific commands
 	CMN.interf.channel = 3;
-	CMN.interf.cmde_mask = _CM(FR_STATE) | _CM(FR_TIME_GET) | _CM(FR_MUX_POWER);
+	CMN.interf.cmde_mask = _CM(FR_STATE) | _CM(FR_TIME_GET) | _CM(FR_MUX_RESET);
 	CMN.interf.queue = &CMN.in;
 	DPT_register(&CMN.interf);
 

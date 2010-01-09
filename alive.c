@@ -53,7 +53,7 @@ static struct {
 	pt_t rx_pt;					// rx context
 	pt_t tx_pt;					// tx context
 
-	dpt_frame_t fr;				// a buffer frame
+	frame_t fr;					// a buffer frame
 
 	s8 volatile anti_bounce;	// anti-bounce counter
 	u8 trigger;					// signal if the action has already happened
@@ -64,7 +64,7 @@ static struct {
 
 	u32 time_out;				// time-out for scan request sending
 
-	dpt_frame_t buf[QUEUE_SIZE];
+	frame_t buf[QUEUE_SIZE];
 	fifo_t in_fifo;				// reception queue
 } ALV;
 
@@ -133,7 +133,7 @@ static u8 ALV_next_address(void)
 
 static PT_THREAD( ALV_rx(pt_t* pt) )
 {
-	dpt_frame_t fr;
+	frame_t fr;
 
 	PT_BEGIN(pt);
 
@@ -212,7 +212,7 @@ static PT_THREAD( ALV_tx(pt_t* pt) )
 		ALV.fr.resp = 0;
 		ALV.fr.error = 0;
 		//ALV.fr.nat = 0;
-		ALV.fr.cmde = FR_RECONF_FORCE_MODE;
+		ALV.fr.cmde = FR_RECONF_MODE;
 		ALV.fr.argv[0] = 0x00;
 		ALV.fr.argv[1] = 0x02;		// no bus active
 
@@ -234,7 +234,7 @@ static PT_THREAD( ALV_tx(pt_t* pt) )
 		ALV.fr.resp = 0;
 		ALV.fr.error = 0;
 		//ALV.fr.nat = 0;
-		ALV.fr.cmde = FR_RECONF_FORCE_MODE;
+		ALV.fr.cmde = FR_RECONF_MODE;
 		ALV.fr.argv[0] = 0x00;
 		ALV.fr.argv[1] = 0x03;		// bus mode is automatic
 

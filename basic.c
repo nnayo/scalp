@@ -53,13 +53,13 @@ static struct {
 	// for incoming frames
 	pt_t	in_pt;						// proto-thread context
 	fifo_t	in_fifo;					// fifo
-	dpt_frame_t in_buf[NB_IN_FRAMES];	// buffer
+	frame_t in_buf[NB_IN_FRAMES];	// buffer
 
 	// for response frames
 	pt_t	out_pt;						// context
 	fifo_t	out_fifo;					// fifo
-	dpt_frame_t out_buf[NB_OUT_FRAMES];	// buffer
-	dpt_frame_t out;
+	frame_t out_buf[NB_OUT_FRAMES];	// buffer
+	frame_t out;
 } BSC;
 
 
@@ -68,12 +68,12 @@ static struct {
 //
 
 // frame handling
-//static void BSC_frame_handling(dpt_frame_t* fr)
-void BSC_frame_handling(dpt_frame_t* fr)
+//static void BSC_frame_handling(frame_t* fr)
+void BSC_frame_handling(frame_t* fr)
 {
 	u8 i;
-	dpt_frame_t resp;		// response frame
-	dpt_frame_t cont_fr;	// contained frame
+	frame_t resp;		// response frame
+	frame_t cont_fr;	// contained frame
 	u16* addr;
 	u16 data = 0;
 	u32 time, delay;
@@ -182,7 +182,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 					// for each frame in the container
 					for ( i = 0; i < fr->argv[2]; i++) {
 						// extract the frames from EEPROM
-						EEP_read((u16)((u8*)addr + i * sizeof(dpt_frame_t)), (u8*)&cont_fr, sizeof(dpt_frame_t));
+						EEP_read((u16)((u8*)addr + i * sizeof(frame_t)), (u8*)&cont_fr, sizeof(frame_t));
 
 						// enqueue the contained frame
 						FIFO_put(&BSC.out_fifo, &cont_fr);
@@ -193,7 +193,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 					// for each frame in the container
 					for ( i = 0; i < fr->argv[2]; i++) {
 						// read the frame from RAM
-						cont_fr = *((dpt_frame_t *)((u8*)addr + i * sizeof(dpt_frame_t)));
+						cont_fr = *((frame_t *)((u8*)addr + i * sizeof(frame_t)));
 
 						// enqueue the contained frame
 						FIFO_put(&BSC.out_fifo, &cont_fr);
@@ -204,21 +204,21 @@ void BSC_frame_handling(dpt_frame_t* fr)
 					// for each frame in the container
 					for ( i = 0; i < fr->argv[2]; i++) {
 						// extract the frame from FLASH
-						memcpy_P(&cont_fr, (const void *)((u8*)addr + i * sizeof(dpt_frame_t)), sizeof(dpt_frame_t));
+						memcpy_P(&cont_fr, (const void *)((u8*)addr + i * sizeof(frame_t)), sizeof(frame_t));
 
 						// enqueue the contained frame
 						FIFO_put(&BSC.out_fifo, &cont_fr);
 					}
 					break;
 
-				case 0x00:
-				case 0x01:
-				case 0x02:
-				case 0x03:
-				case 0x04:
-				case 0x05:
+				case PRE_0_STORAGE:
+				case PRE_1_STORAGE:
+				case PRE_2_STORAGE:
+				case PRE_3_STORAGE:
+				case PRE_4_STORAGE:
+				case PRE_5_STORAGE:
 					// extract the frame from EEPROM
-					EEP_read((u16)((u8*)addr + fr->argv[3] * sizeof(dpt_frame_t)), (u8*)&cont_fr, sizeof(dpt_frame_t));
+					EEP_read((u16)((u8*)addr + fr->argv[3] * sizeof(frame_t)), (u8*)&cont_fr, sizeof(frame_t));
 
 					// enqueue the contained frame
 					FIFO_put(&BSC.out_fifo, &cont_fr);
@@ -251,7 +251,7 @@ void BSC_frame_handling(dpt_frame_t* fr)
 
 PT_THREAD(BSC_in(pt_t* pt))
 {
-	dpt_frame_t fr;
+	frame_t fr;
 
 	PT_BEGIN(pt);
 
@@ -310,11 +310,11 @@ PT_THREAD(BSC_out(pt_t* pt))
 // basic module initialization
 void BSC_init(void)
 {
-	dpt_frame_t fr;
+	frame_t fr;
 
 	// fifoes init
-	FIFO_init(&BSC.in_fifo, &BSC.in_buf, NB_IN_FRAMES, sizeof(dpt_frame_t));
-	FIFO_init(&BSC.out_fifo, &BSC.out_buf, NB_OUT_FRAMES, sizeof(dpt_frame_t));
+	FIFO_init(&BSC.in_fifo, &BSC.in_buf, NB_IN_FRAMES, sizeof(frame_t));
+	FIFO_init(&BSC.out_fifo, &BSC.out_buf, NB_OUT_FRAMES, sizeof(frame_t));
 
 	// thread init
 	PT_INIT(&BSC.in_pt);
@@ -340,7 +340,7 @@ void BSC_init(void)
 	EEP_init();
 
 	// read reset frame
-	EEP_read(0x00, (u8*)&fr, sizeof(dpt_frame_t));
+	EEP_read(0x00, (u8*)&fr, sizeof(frame_t));
 
 	// enqueue the reset frame
 	FIFO_put(&BSC.out_fifo, &fr);

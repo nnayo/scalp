@@ -56,9 +56,9 @@ static struct {
 	
 	// reception fifo
 	fifo_t in_fifo;
-	dpt_frame_t in_buf[ROUT_NB_RX];
+	frame_t in_buf[ROUT_NB_RX];
 
-	dpt_frame_t fr;
+	frame_t fr;
 
 	dpt_interface_t interf;		// dispatcher interface
 

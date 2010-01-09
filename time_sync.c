@@ -44,13 +44,13 @@ static struct {
 
 	pt_t pt;					// thread context
 
-	dpt_frame_t fr;				// a buffer frame
+	frame_t fr;				// a buffer frame
 
 	u32 time_out;
 	s8 time_correction;
 
 	fifo_t queue;				// reception queue
-	dpt_frame_t buf[QUEUE_SIZE];
+	frame_t buf[QUEUE_SIZE];
 } TSN;
 
 

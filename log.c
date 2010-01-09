@@ -45,6 +45,12 @@
 
 #define NB_ORIG_FILTER	6
 
+#define SAVE_IN_RAM_ENABLED
+#ifdef SAVE_IN_RAM_ENABLED
+# define RAM_BUFFER_SIZE	30
+#endif
+
+
 //----------------------------------------
 // private defines
 //
@@ -52,11 +58,12 @@
 typedef struct {
 	u8	index;			// log index (unique for each log session)
 	u8	time[2];		// middle octets of the TIME (2.56 ms resol / 46.6 h scale)
-	dpt_frame_t fr;		// complete frame
+	frame_t fr;		// complete frame
 } log_t;
 
 typedef enum {
 	LOG_OFF,
+	LOG_RAM,
 	LOG_SDCARD,
 	LOG_EEPROM,
 } log_state_t;
@@ -71,8 +78,8 @@ static struct {
 	pt_t	log_pt;				// context
 
 	fifo_t	in_fifo;			// reception fifo
-	dpt_frame_t in_buf[NB_FRAMES];
-	dpt_frame_t fr;				// command frame 
+	frame_t in_buf[NB_FRAMES];
+	frame_t fr;				// command frame 
 
 	log_state_t state;			// logging state
 
@@ -83,6 +90,11 @@ static struct {
 	u8 orig_filter[NB_ORIG_FILTER];	// origin node filter
 
 	log_t block;
+
+#ifdef SAVE_IN_RAM_ENABLED
+	u8 ram_index;
+	log_t ram_buffer[RAM_BUFFER_SIZE];
+#endif
 } LOG;
 
 
@@ -176,25 +188,29 @@ static void LOG_find_sdcard_start(u8 eeprom_index)
 }
 
 
-static void LOG_command(dpt_frame_t* fr)
+static void LOG_command(frame_t* fr)
 {
 	u64 filter;
 
 	// upon the sub-command
 	switch ( fr->argv[0] ) {
-	case 0x00:	// off
+	case FR_LOG_CMD_OFF:	// off
 		LOG.state = LOG_OFF;
 		break;
 
-	case 0x1a:	// log to sdcard
+	case FR_LOG_CMD_RAM:	// log to RAM
+		LOG.state = LOG_RAM;
+		break;
+
+	case FR_LOG_CMD_SDCARD:	// log to sdcard
 		LOG.state = LOG_SDCARD;
 		break;
 
-	case 0x1e:	// log to eeprom
+	case FR_LOG_CMD_EEPROM:	// log to eeprom
 		LOG.state = LOG_EEPROM;
 		break;
 
-	case 0x27:	// set command filter LSB part
+	case FR_LOG_CMD_SET_LSB:	// set command filter LSB part
 		filter  = (u64)fr->argv[1] << 24;
 		filter &= (u64)fr->argv[2] << 16;
 		filter &= (u64)fr->argv[3] <<  8;
@@ -207,7 +223,7 @@ static void LOG_command(dpt_frame_t* fr)
 		LOG.interf.cmde_mask = filter;
 		break;
 
-	case 0x28:	// set command filter MSB part
+	case FR_LOG_CMD_SET_MSB:	// set command filter MSB part
 		filter  = (u64)fr->argv[1] << 56;
 		filter &= (u64)fr->argv[2] << 48;
 		filter &= (u64)fr->argv[3] << 40;
@@ -220,7 +236,7 @@ static void LOG_command(dpt_frame_t* fr)
 		LOG.interf.cmde_mask = filter;
 		break;
 
-	case 0x2e:	// get command filter LSB part
+	case FR_LOG_CMD_GET_LSB:	// get command filter LSB part
 		// get the filter value
 		filter = LOG.interf.cmde_mask;
 
@@ -230,7 +246,7 @@ static void LOG_command(dpt_frame_t* fr)
 		fr->argv[4] = (u8)(filter >>  0);
 		break;
 
-	case 0x2f:	// get command filter MSB part
+	case FR_LOG_CMD_GET_MSB:	// get command filter MSB part
 		// get the filter value
 		filter = LOG.interf.cmde_mask;
 
@@ -240,11 +256,11 @@ static void LOG_command(dpt_frame_t* fr)
 		fr->argv[4] = (u8)(filter >> 32);
 		break;
 
-	case 0x3c:	// set origin filter
+	case FR_LOG_CMD_SET_ORIG:	// set origin filter
 		memcpy(LOG.orig_filter, &fr->argv[1], NB_ORIG_FILTER);
 		break;
 
-	case 0x3f:	// get origin filter
+	case FR_LOG_CMD_GET_ORIG:	// get origin filter
 		memcpy(&fr->argv[1], LOG.orig_filter, NB_ORIG_FILTER);
 		break;
 
@@ -275,6 +291,11 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 
 			// loop back for next frame
 			PT_RESTART(pt);
+			break;
+
+		case LOG_RAM:
+#ifdef SAVE_IN_RAM_ENABLED
+#endif
 			break;
 
 		case LOG_EEPROM:
@@ -342,6 +363,15 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 			PT_RESTART(pt);
 			break;
 
+		case LOG_RAM:
+#ifdef SAVE_IN_RAM_ENABLED
+			LOG.ram_buffer[LOG.ram_index] = LOG.block;
+			if ( LOG.ram_index < (RAM_BUFFER_SIZE - 1) ) {
+				LOG.ram_index++;
+			}
+#endif
+			break;
+
 		case LOG_EEPROM:
 			// save it to eeprom
 			PT_WAIT_UNTIL(pt, EEP_write(LOG.eeprom_addr, (u8*)&LOG.block, sizeof(log_t)));
@@ -389,6 +419,10 @@ void LOG_init(void)
 
 	LOG.state = LOG_OFF;
 
+#ifdef SAVE_IN_RAM_ENABLED
+	LOG.ram_index = 0;
+#endif
+
 	// find the start address for this session
 	index = LOG_find_eeprom_start();
 	LOG_find_sdcard_start(index);
@@ -398,11 +432,11 @@ void LOG_init(void)
 	LOG.interf.cmde_mask = MINIMAL_FILTER;
 	LOG.interf.queue = &LOG.in_fifo;
 	LOG.interf.cmde_mask = _CM(FR_STATE)
-				| _CM(FR_MUX_POWER)
-				| _CM(FR_RECONF_FORCE_MODE)
+				| _CM(FR_MUX_RESET)
+				| _CM(FR_RECONF_MODE)
 				| _CM(FR_MINUT_TAKE_OFF)
 				| _CM(FR_MINUT_DOOR_CMD)
-				| _CM(FR_SURV_PWR_CMD)
+				| _CM(FR_SWITCH_POWER)
 				| MINIMAL_FILTER;
 	DPT_register(&LOG.interf);
 }

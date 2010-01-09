@@ -55,38 +55,38 @@
 static struct {
 	pt_t twi_in_pt;				// twi in part
 	fifo_t twi_in_fifo;
-	dpt_frame_t twi_in_buf[QUEUE_SIZE];
+	frame_t twi_in_buf[QUEUE_SIZE];
 	dpt_interface_t interf;		// dispatcher interface
-	dpt_frame_t twi_in;	
+	frame_t twi_in;	
 
 	pt_t twi_out_pt;			// twi out part
 	fifo_t twi_out_fifo;
-	dpt_frame_t twi_out_buf[QUEUE_SIZE];
-	dpt_frame_t twi_out;
+	frame_t twi_out_buf[QUEUE_SIZE];
+	frame_t twi_out;
 
 #ifdef NAT_ENABLE_ETH
 	pt_t eth_in_pt;				// eth in part
 	fifo_t eth_in_fifo;
-	dpt_frame_t eth_in_buf[QUEUE_SIZE];
-	dpt_frame_t eth_in;
+	frame_t eth_in_buf[QUEUE_SIZE];
+	frame_t eth_in;
 
 	pt_t eth_out_pt;			// eth out part
 	fifo_t eth_out_fifo;
-	dpt_frame_t eth_out_buf[QUEUE_SIZE];
-	dpt_frame_t eth_out;
+	frame_t eth_out_buf[QUEUE_SIZE];
+	frame_t eth_out;
 #endif
 
 #ifdef NAT_ENABLE_RS
 	pt_t rs_in_pt;				// rx in part
 	u32 time_out;				// time-out in reception
 	fifo_t rs_in_fifo;
-	dpt_frame_t rs_in_buf[QUEUE_SIZE];
-	dpt_frame_t rs_in;
+	frame_t rs_in_buf[QUEUE_SIZE];
+	frame_t rs_in;
 
 	pt_t rs_out_pt;
 	fifo_t rs_out_fifo;
-	dpt_frame_t rs_out_buf[QUEUE_SIZE];
-	dpt_frame_t rs_out;
+	frame_t rs_out_buf[QUEUE_SIZE];
+	frame_t rs_out;
 #endif
 } NAT;
 

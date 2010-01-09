@@ -28,6 +28,9 @@ env = Environment(
 
 env.Library('scalp', scalp)
 
+# autogen fr_cmdes.h file
+env.Command('fr_cmdes.h', '', 'python ../interface_server/frame.py > fr_cmdes.h')
+
 # suppress reliquat files
 env.Alias('clean', '', 'rm -f *~ *o libscalp.a')
 env.AlwaysBuild('clean')

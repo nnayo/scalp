@@ -68,12 +68,6 @@
 // private defines
 //
 
-#define DPT_FRAME_DEST_OFFSET	0
-#define DPT_FRAME_ORIG_OFFSET	1
-#define DPT_FRAME_T_ID_OFFSET	2
-#define DPT_FRAME_CMDE_OFFSET	3
-#define DPT_FRAME_ARGV_OFFSET	4
-
 #define NB_IN_FRAMES			(MAX_ROUTES / 2)
 #define NB_OUT_FRAMES			(MAX_ROUTES / 2)
 #define NB_APPLI_FRAMES			1
@@ -89,19 +83,19 @@ static struct {
 
 	pt_t appli_pt;							// appli thread
 	fifo_t appli_fifo;
-	dpt_frame_t appli_buf[NB_APPLI_FRAMES];
-	dpt_frame_t appli;
+	frame_t appli_buf[NB_APPLI_FRAMES];
+	frame_t appli;
 
 	pt_t in_pt;								// in thread
 	fifo_t in_fifo;
-	dpt_frame_t in_buf[NB_IN_FRAMES];
-	dpt_frame_t in;	
+	frame_t in_buf[NB_IN_FRAMES];
+	frame_t in;	
 
 	pt_t out_pt;							// out thread
 	fifo_t out_fifo;
-	dpt_frame_t out_buf[NB_OUT_FRAMES];
-	dpt_frame_t out;
-	dpt_frame_t hard;
+	frame_t out_buf[NB_OUT_FRAMES];
+	frame_t out;
+	frame_t hard;
 	volatile u8 hard_fini;
 
 	u8 sl_addr;								// own I2C slave address
@@ -115,7 +109,7 @@ static struct {
 //
 
 // dispatch the frame to each registered listener
-static void DPT_dispatch(dpt_frame_t* fr)
+static void DPT_dispatch(frame_t* fr)
 {
 	u8 i;
 	fr_cmdes_t cmde = fr->cmde;
@@ -151,7 +145,7 @@ static void DPT_dispatch(dpt_frame_t* fr)
 
 static PT_THREAD( DPT_appli(pt_t* pt) )
 {
-	dpt_frame_t fr;
+	frame_t fr;
 	u8 routes[MAX_ROUTES];
 	u8 nb_routes;
 	u8 i;
@@ -201,7 +195,7 @@ static PT_THREAD( DPT_appli(pt_t* pt) )
 
 static PT_THREAD( DPT_in(pt_t* pt) )
 {
-	dpt_frame_t fr;
+	frame_t fr;
 
 	PT_BEGIN(pt);
 
@@ -232,7 +226,7 @@ static PT_THREAD( DPT_out(pt_t* pt) )
 
 		// compute and save time-out limit
 		// byte transmission is typically 100 us
-		DPT.time_out = TIME_get() + TIME_1_MSEC * sizeof(dpt_frame_t);
+		DPT.time_out = TIME_get() + TIME_1_MSEC * sizeof(frame_t);
 
 		// now a twi transfer shall begin
 		DPT.hard_fini = KO;
@@ -243,15 +237,15 @@ static PT_THREAD( DPT_out(pt_t* pt) )
 	// in case of I2C read or write are taken from the DPT.hard frame
 	switch ( DPT.hard.cmde ) {
 		case FR_I2C_READ:
-			twi_res = TWI_ms_rx(DPT.hard.dest, DPT.hard.argv[0], (u8*)&DPT.hard + DPT_FRAME_ARGV_OFFSET + 1);
+			twi_res = TWI_ms_rx(DPT.hard.dest, DPT.hard.argv[0], (u8*)&DPT.hard + FRAME_ARGV_OFFSET + 1);
 			break;
 
 		case FR_I2C_WRITE:
-			twi_res = TWI_ms_tx(DPT.hard.dest, DPT.hard.argv[0], (u8*)&DPT.hard + DPT_FRAME_ARGV_OFFSET + 1);
+			twi_res = TWI_ms_tx(DPT.hard.dest, DPT.hard.argv[0], (u8*)&DPT.hard + FRAME_ARGV_OFFSET + 1);
 			break;
 
 		default:
-			twi_res = TWI_ms_tx(DPT.hard.dest, sizeof(dpt_frame_t) - DPT_FRAME_ORIG_OFFSET, (u8*)&DPT.hard + DPT_FRAME_ORIG_OFFSET);
+			twi_res = TWI_ms_tx(DPT.hard.dest, sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&DPT.hard + FRAME_ORIG_OFFSET);
 			break;
 	}
 
@@ -333,13 +327,13 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 			// only the origin, the cmde/resp and the arguments are received
 			DPT.hard_fini = KO;
 			DPT.hard.dest = DPT.sl_addr;
-			TWI_sl_rx(sizeof(dpt_frame_t) - DPT_FRAME_ORIG_OFFSET, (u8*)&DPT.hard + DPT_FRAME_ORIG_OFFSET);
+			TWI_sl_rx(sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&DPT.hard + FRAME_ORIG_OFFSET);
 
 			break;
 
 		case TWI_SL_RX_END:
 			// if the msg len is correct
-			if ( nb_data == (sizeof(dpt_frame_t) - DPT_FRAME_ORIG_OFFSET)) {
+			if ( nb_data == (sizeof(frame_t) - FRAME_ORIG_OFFSET)) {
 				// enqueue the response
 				FIFO_put(&DPT.in_fifo, &DPT.hard);
 			}
@@ -368,13 +362,13 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 			// only the origin, the cmde/resp and the arguments are received
 			DPT.hard_fini = KO;
 			DPT.hard.dest = DPT.sl_addr;
-			TWI_sl_rx(sizeof(dpt_frame_t) - DPT_FRAME_ORIG_OFFSET, (u8*)&DPT.hard + DPT_FRAME_ORIG_OFFSET);
+			TWI_sl_rx(sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&DPT.hard + FRAME_ORIG_OFFSET);
 
 			break;
 
 		case TWI_GENCALL_END:
 			// if the msg len is correct
-			if ( nb_data == (sizeof(dpt_frame_t) - DPT_FRAME_ORIG_OFFSET)) {
+			if ( nb_data == (sizeof(frame_t) - FRAME_ORIG_OFFSET)) {
 				// enqueue the incoming frame
 				FIFO_put(&DPT.in_fifo, &DPT.hard);
 			}
@@ -412,17 +406,17 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 void DPT_init(void)
 {
 	// appli thread init
-	FIFO_init(&DPT.appli_fifo, &DPT.appli_buf, NB_APPLI_FRAMES, sizeof(dpt_frame_t));
+	FIFO_init(&DPT.appli_fifo, &DPT.appli_buf, NB_APPLI_FRAMES, sizeof(frame_t));
 	PT_INIT(&DPT.appli_pt);
 
 	// in thread init
-	FIFO_init(&DPT.in_fifo, &DPT.in_buf, NB_IN_FRAMES, sizeof(dpt_frame_t));
+	FIFO_init(&DPT.in_fifo, &DPT.in_buf, NB_IN_FRAMES, sizeof(frame_t));
 	PT_INIT(&DPT.in_pt);
 
 	// out thread init
 	DPT.sl_addr = DPT_SELF_ADDR;
 	DPT.time_out = TIME_MAX;
-	FIFO_init(&DPT.out_fifo, &DPT.out_buf, NB_OUT_FRAMES, sizeof(dpt_frame_t));
+	FIFO_init(&DPT.out_fifo, &DPT.out_buf, NB_OUT_FRAMES, sizeof(frame_t));
 	PT_INIT(&DPT.out_pt);
 	DPT.hard_fini = OK;
 
@@ -513,7 +507,7 @@ void DPT_unlock(dpt_interface_t* interf)
 }
 
 
-u8 DPT_tx(dpt_interface_t* interf, dpt_frame_t* fr)
+u8 DPT_tx(dpt_interface_t* interf, frame_t* fr)
 {
 	u8 i;
 

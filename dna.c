@@ -66,9 +66,9 @@ static struct {
 	u8 index;					// index in current sending of the list
 
 	fifo_t in_fifo;				// incoming frames fifo
-	dpt_frame_t in_buf[NB_IN];	// incoming frames buffer
+	frame_t in_buf[NB_IN];	// incoming frames buffer
 
-	dpt_frame_t out;			// out going frame
+	frame_t out;			// out going frame
 
 	u8 tmp;						// all purpose temporary buffer
 
@@ -85,7 +85,7 @@ static struct {
 // DNA.tmp is used to store the scanned I2C address
 static PT_THREAD( DNA_scan_free(pt_t* pt) )
 {
-	dpt_frame_t fr;
+	frame_t fr;
 
 	PT_BEGIN(pt);
 
@@ -141,7 +141,7 @@ static PT_THREAD( DNA_scan_free(pt_t* pt) )
 // DNA.tmp is used to stored the scanned BS address
 static PT_THREAD( DNA_scan_bs(pt_t* pt) )
 {
-	dpt_frame_t fr;
+	frame_t fr;
 
 	PT_BEGIN(pt);
 
@@ -231,7 +231,7 @@ static PT_THREAD( DNA_list_updater(pt_t* pt) )
 	
 	if ( DNA.index < DNA_LIST_SIZE ) {
 		// compose a FR_LINE command
-		DNA.out.cmde = FR_LINE;
+		DNA.out.cmde = FR_DNA_LINE;
 		DNA.out.argv[0] = DNA.index;
 		DNA.out.argv[1] = DNA.list[DNA.index].type;
 		DNA.out.argv[2] = DNA.list[DNA.index].i2c_addr;
@@ -242,8 +242,8 @@ static PT_THREAD( DNA_list_updater(pt_t* pt) )
 
 	if ( DNA.index == DNA_LIST_SIZE) {
 		// once the update is finished
-		// compose a FR_LIST command
-		DNA.out.cmde = FR_LIST;
+		// compose a FR_DNA_LIST command
+		DNA.out.cmde = FR_DNA_LIST;
 		DNA.out.argv[0] = DNA.nb_is;
 		DNA.out.argv[1] = DNA.nb_bs;
 		DNA.out.argv[2] = 0x00;
@@ -264,7 +264,7 @@ static PT_THREAD( DNA_list_updater(pt_t* pt) )
 
 static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 {
-	dpt_frame_t fr;
+	frame_t fr;
 	u8 addr;
 
 	PT_BEGIN(pt);
@@ -296,7 +296,7 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 	DNA.out.argv[3] = 0x00;
 
 	switch (fr.cmde) {
-		case FR_REGISTER:
+		case FR_DNA_REGISTER:
 			// an IS is registering
 			addr = fr.orig;
 
@@ -319,7 +319,7 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 
 			break;
 
-		case FR_LIST:
+		case FR_DNA_LIST:
 			// an IS is asking for the list size
 			// build the response
 			DNA.out.argv[0] = DNA.nb_is;
@@ -329,7 +329,7 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 			PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
 			break;
 
-		case FR_LINE:
+		case FR_DNA_LINE:
 			// an IS is asking for a specific line
 			// build the response
 			DNA.out.argv[0] = fr.argv[0];
@@ -372,7 +372,7 @@ static u8 DNA_bc(void)
 
 static PT_THREAD( DNA_is_reg_wait(pt_t* pt, u8* ret) )
 {
-	dpt_frame_t fr;
+	frame_t fr;
 
 	PT_BEGIN(pt);
 
@@ -380,7 +380,7 @@ static PT_THREAD( DNA_is_reg_wait(pt_t* pt, u8* ret) )
 	PT_WAIT_UNTIL(pt, (TIME_get() >= DNA.time) || (OK == (*ret = FIFO_get(&DNA.in_fifo, &fr))) );
 
 	// check whether the REGISTER resp is received
-	if ( (fr.cmde == FR_REGISTER) && fr.resp ) {
+	if ( (fr.cmde == FR_DNA_REGISTER) && fr.resp ) {
 		// registering is done
 		// update reg nodes list
 		DNA.list[DNA_BC].type = DNA_BC;
@@ -412,7 +412,7 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 	// send the REGISTER cmde
 	DNA.out.dest = DPT_BROADCAST_ADDR;
 	DNA.out.orig = DNA_SELF_ADDR(DNA.list);
-	DNA.out.cmde = FR_REGISTER;
+	DNA.out.cmde = FR_DNA_REGISTER;
 	DNA.out.resp = 0;
 	DNA.out.error = 0;
 	DNA.out.eth = 0;
@@ -434,7 +434,7 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 			// send reconf bus force mode to NONE
 			DNA.out.orig = DPT_SELF_ADDR;
 			DNA.out.dest = DPT_SELF_ADDR;
-			DNA.out.cmde = FR_RECONF_FORCE_MODE;
+			DNA.out.cmde = FR_RECONF_MODE;
 			DNA.out.resp = 0;
 			DNA.out.error = 0;
 			DNA.out.eth = 0;
@@ -458,7 +458,7 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 
 static PT_THREAD( DNA_is(pt_t* pt) )
 {
-	dpt_frame_t fr;
+	frame_t fr;
 
 	PT_BEGIN(pt);
 
@@ -475,7 +475,7 @@ static PT_THREAD( DNA_is(pt_t* pt) )
 	}
 
 	switch (fr.cmde) {
-		case FR_LIST:
+		case FR_DNA_LIST:
 			// BC is signaling modification in the header of registered nodes list
 			// update own list
 			DNA.nb_is = fr.argv[0];
@@ -483,7 +483,7 @@ static PT_THREAD( DNA_is(pt_t* pt) )
 
 			break;
 
-		case FR_LINE:
+		case FR_DNA_LINE:
 			// BC is signaling modification of registered nodes list
 			// update own list
 			DNA.list[fr.argv[0]].type = fr.argv[1];
@@ -527,7 +527,7 @@ void DNA_init(dna_t mode)
 
 	// register to the dispatcher
 	DNA.interf.channel = 2;
-	DNA.interf.cmde_mask = _CM(FR_REGISTER) | _CM(FR_LIST) | _CM(FR_LINE) | _CM(FR_I2C_WRITE) | _CM(FR_I2C_READ);
+	DNA.interf.cmde_mask = _CM(FR_DNA_REGISTER) | _CM(FR_DNA_LIST) | _CM(FR_DNA_LINE) | _CM(FR_I2C_WRITE) | _CM(FR_I2C_READ);
 	DNA.interf.queue = &DNA.in_fifo;
 	DPT_register(&DNA.interf);
 

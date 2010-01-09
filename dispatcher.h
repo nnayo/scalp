@@ -44,8 +44,6 @@
 
 # define DPT_CHAN_NB	12				// dispatcher available channels number
 
-# define DPT_ARGC		FRAME_NB_ARGS	// frame number of arguments
-
 # define DPT_BROADCAST_ADDR	0x00		// frame broadcast address
 # define DPT_SELF_ADDR		0x01		// reserved I2C address used for generic local node
 # define DPT_FIRST_ADDR		0x02		// first I2C address
@@ -58,26 +56,6 @@
 //----------------------------------------
 // public types
 //
-
-typedef struct {
-	u8		dest;			// msg destination
-	u8		orig;			// msg origin
-	u8		t_id;			// transaction id
-	fr_cmdes_t	cmde;		// msg command
-	union {
-		u8 status;			// status field
-		struct {			// and its sub-parts
-			u8 error:1;		// msg error flag
-			u8 resp:1;		// msg response flag
-			u8 time_out:1;	// msg time-out flag
-			u8 eth:1;		// msg eth nat flag
-			u8 serial:1;	// msg serial nat flag
-			u8 reserved:3;	// reserved for future use
-		};
-	};
-	u8		argv[DPT_ARGC];	// msg command argument(s) if any
-} dpt_frame_t;				// dispatcher frame format
-
 
 typedef struct {
 	u8 channel;			// requested channel
@@ -162,7 +140,7 @@ extern void DPT_unlock(dpt_interface_t* interf);
 // if a frame can't be sent, it probably
 // means the channel is not locked or
 // a channel of higher priority is locked
-extern u8 DPT_tx(dpt_interface_t* interf, dpt_frame_t* frame);
+extern u8 DPT_tx(dpt_interface_t* interf, frame_t* frame);
 
 
 // dispatcher set TWI slave address function

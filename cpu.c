@@ -39,8 +39,8 @@ typedef struct {
 static struct {
 	dpt_interface_t interf;		// dispatcher interface
 	fifo_t fifo;
-	dpt_frame_t buf[1];
-	dpt_frame_t fr;
+	frame_t buf[1];
+	frame_t fr;
 	pt_t pt;
 
 	u32 time;					// stats update time-out
