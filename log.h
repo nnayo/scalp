@@ -34,7 +34,7 @@
 //
 
 // eeprom limits
-#define EEPROM_START_ADDR	((u16)155)		// the place before is reserved for event frames
+#define EEPROM_START_ADDR	((u16)256)		// the place before is reserved for event frames
 #define EEPROM_END_ADDR		((u16)1024)		// 1 Ko
 
 // sdcard limits

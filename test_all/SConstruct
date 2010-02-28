@@ -1,15 +1,17 @@
 project_name = 'test_all'
 
 test_all	= [
-	'test_all.c',		\
-	'fifo.c',		\
+	'test_all.c',			\
+	'fifo.c',				\
 	'../../test/test.c',	\
-	'basic.c',		\
-	'common.c',		\
-	'dispatcher.c',		\
-	'dna.c',		\
-	'nat.c',		\
-	'reconf.c',		\
+	'basic.c',				\
+	'common.c',				\
+	'dispatcher.c',			\
+	'dna.c',				\
+	'nat.c',				\
+	'reconf.c',				\
+	'routing_tables.c',		\
+	'log.c',				\
 ]
 
 #libs = ['scalp', 'nanoK']
@@ -17,10 +19,11 @@ test_all	= [
 
 #SConscript(['./scalp/SConscript', './nanoK/SConscript'])
 
-optimize        = '-O2 '
-optimize        = ' '
+debug		= '-DDEBUG_EXTRA=500 '
+optimize    = '-O2 '
+optimize    = '-fpack-struct -fshort-enums '
 includes	= ['.', './scalp', './nanoK', './test']
-cflags		= '-g -Wall ' + optimize
+cflags		= '-g -Wall ' + optimize + debug
 ldflags		= '-g -Wall -lrt ' + optimize
 
 env = Environment(

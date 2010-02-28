@@ -1,6 +1,10 @@
 #include <string.h>
 #include <time.h>
 #include <limits.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include "test.h"
 
@@ -12,6 +16,7 @@
 #include "scalp/dna.h"
 #include "scalp/common.h"
 #include "scalp/nat.h"
+#include "scalp/log.h"
 
 #include "utils/time.h"
 
@@ -75,6 +80,7 @@ struct timespec timespec_diff(struct timespec* t1, struct timespec* t2)
 
 u32 TIME_get(void)
 {
+#if 0
 	struct timespec local_time;
 	struct timespec delta_time;
 
@@ -84,7 +90,7 @@ u32 TIME_get(void)
 	// resolution on ATmega32 is 10 ms
 	// update timer
 	delta_time = timespec_diff(&local_time, &TIME.start_time);
-	TIME.t = delta_time.tv_sec * 100 + delta_time.tv_nsec / 10000;
+	TIME.t = delta_time.tv_sec * 100 + delta_time.tv_nsec / 10000000;
 	//printf("delta_time = %02ld s %09ld ns ==> TIME.t = %d\n", delta_time.tv_sec, delta_time.tv_nsec, TIME.t);
 
 	// check if timer update was needed
@@ -94,17 +100,26 @@ u32 TIME_get(void)
 		// and log
 		TEST_log("TIME_get : t = %d", TIME.t);
 	}
+#else
+	TEST_log("TIME_get : t = %d ms", TIME.t / TIME_1_MSEC);
+#endif
 
 	return TIME.t;
 }
 
 
+#define EEP_COUNT_MAX	3
+
 struct {
-	u8* data;
+	u8 data[2048];
+	u16 data_len;
+	u8 fini;
+	u8 count_fini;
 } EEP;
 
-static void eeprom_init(void)
+void EEP_init(void)
 {
+#if 0
 	static u8 surv_data[] = {
 		0x01, 0x01, 0x00, 0x0e, 0x7a, 0x00, 0x00, 0xff,
 		0x01, 0x01, 0x00, 0x0a, 0x00, 0x30, 0x05, 0xee,
@@ -125,6 +140,18 @@ static void eeprom_init(void)
 		0x70, 0x01, 0x00, 0x01, 0x01, 0x05, 0xff, 0xff,
 		0x01, 0x01, 0x00, 0x17, 0x00, 0xff, 0xff, 0xff,
 	};
+#endif
+
+	int fd = open("log.bin", O_RDONLY);
+
+	if ( fd == -1 ) {
+		perror("cannot open log.bin");
+		exit(1);
+	}
+
+	EEP.data_len = read(fd, EEP.data, 2048);
+	perror("log.bin");
+
 
 #if 0
 	int i;
@@ -147,31 +174,97 @@ static void eeprom_init(void)
 	}
 #endif
 
-	EEP.data = surv_data;
+	EEP.fini = KO;
+	EEP.count_fini = 0;
 }
 
 
-void eeprom_read_block(void* data, const void* addr, int len)
+void EEP_read(u16 addr, u8* data, u8 len)
 {
-	union {
-		void* ptr;
-		int addr;
-	} ptr2addr;
 	u8* data_ptr;
 
-	ptr2addr.ptr = (void*)addr;
-	data_ptr = EEP.data + ptr2addr.addr;
+	TEST_log("EEP_read : addr = 0x%04x, len = %d", addr, len);
 
-	TEST_log("eeprom_read_block : addr = 0x%04x, len = %d", addr, len);
-	memcpy(data, data_ptr, len);
+	if ( addr < EEPROM_START_ADDR ) {
+		data_ptr = EEP.data + addr;
+		memcpy(data, data_ptr, len);
+	}
+	else {
+		memset(data, 0xff, len);
+	}
+
 	//TEST_log(" -> fr = { dest = 0x%02x, orig = 0x%02x, cmde = 0x%02x, argv[] = { 0x%02x, 0x%02x, 0x%02x, 0x%02x} }", *(data_ptr + 0), *(data_ptr + 1), *(data_ptr + 2), *(data_ptr + 3), *(data_ptr + 4), *(data_ptr + 5), *(data_ptr + 6));
+	EEP.count_fini += EEP_COUNT_MAX;
+	EEP.fini = KO;
 }
 
 
-void eeprom_write_block(void* data, const void* addr, int len)
+void EEP_write(void* data, const void* addr, int len)
 {
 	u16 dt = *(u16*)data;
-	TEST_log("eeprom_write_block : addr = %p, len = %d, data = 0x%04x", addr, len, dt);
+	TEST_log("EEP_write : addr = %p, len = %d, data = 0x%04x", addr, len, dt);
+	EEP.count_fini += EEP_COUNT_MAX;
+	EEP.fini = KO;
+}
+
+
+u8 EEP_is_fini(void)
+{
+	if ( EEP.count_fini == EEP_COUNT_MAX )
+		TEST_log("EEP_is_fini : first");
+
+	EEP.count_fini--;
+
+	if ( EEP.count_fini == 0 ) {
+		EEP.fini = OK;
+		TEST_log("EEP_is_fini : last");
+	}
+
+	return EEP.fini;
+}
+
+
+#define EEP_COUNT_MAX	3
+
+struct {
+	u8 fini;
+	u8 count_fini;
+} SD;
+
+u8 SD_read(u16 addr, u8* data, u8 len)
+{
+	TEST_log("SD_read : @0x%04x, len = %d", addr, len);
+	memset(data, 0xff, len);
+
+	SD.count_fini += EEP_COUNT_MAX;
+	SD.fini = KO;
+	return OK;
+}
+
+
+u8 SD_write(u16 addr, u8* data, u8 len)
+{
+	TEST_log("SD_write : @0x%04, len = %d", addr, len);
+
+	SD.count_fini += EEP_COUNT_MAX;
+	SD.fini = KO;
+	return OK;
+}
+
+
+u8 SD_is_fini(void)
+{
+	if ( SD.count_fini == EEP_COUNT_MAX )
+		TEST_log("SD_is_fini : first");
+
+	SD.count_fini--;
+
+	if ( SD.count_fini == 0 ) {
+		SD.fini = OK;
+		TEST_log("SD_is_fini : last");
+	}
+
+	return SD.fini;
 }
 
 
@@ -358,28 +451,46 @@ void TWI_gen_call(u8 flag)
 }
 
 
+void cli(void)
+{
+	TEST_log("cli()");
+}
+
+
+void sei(void)
+{
+	TEST_log("sei()");
+}
+
+
 // ------------------------------------------------
 // tests suite
 //
 
 static void all_run(void)
 {
+#if 0
 	struct timespec req;
 	struct timespec rem;
+#endif
 
-	DPT_run();
 	BSC_run();
 	RCF_run();
 	DNA_run();
 	CMN_run();
 	//NAT_run();
+	LOG_run();
 
+	DPT_run();
+
+#if 0
 	// wait 1 ms
 	req.tv_sec = 0;
 	req.tv_nsec = 1e6;
 	while (-1 == nanosleep(&req, &rem)) {
 		req = rem;
 	}
+#endif
 
 	if ( trigger_call_back != NULL ) {
 		trigger_call_back();
@@ -391,7 +502,7 @@ static void test_init(void)
 {
 	// check correct initialization
 	TEST_check("TWI_init");
-	TEST_check("eeprom_read_block : addr = 0x0000, len = 8");
+	TEST_check("EEP_read_block : addr = 0x0000, len = 8");
 		//" -> fr = { dest = 0x01, orig = 0x01, cmde = 0x0e, argv[] = { 0x7a, 0x00, 0x00, 0xff} }",
 	trigger_call_back = NULL;
 	trigger_call_back_param = 0;
@@ -405,7 +516,7 @@ static void test_run_surv(void)
 	DNA_init(DNA_BC);
 
 	TEST_check("TWI_init");
-	TEST_check("eeprom_read_block : addr = 0x0000, len = 8");
+	TEST_check("EEP_read_block : addr = 0x0000, len = 8");
 
 	// ----------------------------
 	// tests
@@ -471,17 +582,17 @@ static void test_run_surv_nat(void)
 	int nat_resp[2];
 
 	TEST_check("TWI_init");
-	TEST_check("eeprom_read_block : addr = 0x0000, len = 8");
+	TEST_check("EEP_read_block : addr = 0x0000, len = 8");
 
 	TEST_check("TIME_get : t = 0");
 	TEST_check("TIME_get : t = 0");
-	TEST_check("eeprom_read_block : addr = 0x0008, len = 8");
+	TEST_check("EEP_read_block : addr = 0x0008, len = 8");
 	TEST_check("TIME_get : t = 0");
-	TEST_check("eeprom_read_block : addr = 0x0030, len = 8");
-	TEST_check("eeprom_read_block : addr = 0x0038, len = 8");
-	TEST_check("eeprom_read_block : addr = 0x0040, len = 8");
-	TEST_check("eeprom_read_block : addr = 0x0048, len = 8");
-	TEST_check("eeprom_read_block : addr = 0x0050, len = 8");
+	TEST_check("EEP_read_block : addr = 0x0030, len = 8");
+	TEST_check("EEP_read_block : addr = 0x0038, len = 8");
+	TEST_check("EEP_read_block : addr = 0x0040, len = 8");
+	TEST_check("EEP_read_block : addr = 0x0048, len = 8");
+	TEST_check("EEP_read_block : addr = 0x0050, len = 8");
 	TEST_check("TIME_get : t = 0");
 	TEST_check("TIME_get : t = 0");
 	TEST_check("TIME_get : t = 0");
@@ -1126,6 +1237,32 @@ static void test_run_surv_nat(void)
 }
 
 
+static void test_free_run_minut(void)
+{
+	int i;
+
+	DNA_init(DNA_MINUT);
+
+	for ( i = 0; i < 2000; i++ ) {
+		all_run();
+		TIME.t += 10 * TIME_1_MSEC;
+	}
+}
+
+
+static void test_free_run_bc(void)
+{
+	int i;
+
+	DNA_init(DNA_BC);
+
+	for ( i = 0; i < 2000; i++ ) {
+		all_run();
+		TIME.t += 10 * TIME_1_MSEC;
+	}
+}
+
+
 static void start(void)
 {
 	PIND = _BV(PD4);	// nominal bus ON
@@ -1135,7 +1272,8 @@ static void start(void)
 	BSC_init();
 	RCF_init();
 	CMN_init();
-	NAT_init();
+	//NAT_init();
+	LOG_init();
 }
 
 
@@ -1150,14 +1288,40 @@ int main(int argc, char* argv[])
 		.start = start,
 		.stop = stop,
 		.list = {
-			{ test_init,		"test init" },
-			{ test_run_surv,	"test run surv" },
+//			{ test_init,		"test init" },
+//			{ test_run_surv,	"test run surv" },
 //			{ test_run_surv_nat,	"test run surv nat" },
+			{ test_free_run_minut,	"test free run minut" },
+			{ test_free_run_bc,		"test free run BC" },
 			{ NULL,			NULL }
 		},
 	};
 
-	eeprom_init();
+#if 0
+	int buf[3];
+	fifo_t fifo;
+	int elem1 = 1;
+	int elem2 = 2;
+	int elem3 = 3;
+	int elem4 = 4;
+	int elem5 = 5;
+	int elem6 = 6;
+	int elem7 = 7;
+	int elem8 = 8;
+	int elem;
+
+	FIFO_init(&fifo, buf, 3, sizeof(int));
+
+	FIFO_unget(&fifo, &elem1);
+	FIFO_unget(&fifo, &elem2);
+	FIFO_get(&fifo, &elem);
+	FIFO_unget(&fifo, &elem3);
+	FIFO_get(&fifo, &elem);
+	FIFO_unget(&fifo, &elem4);
+	FIFO_get(&fifo, &elem);
+#endif
+
+	EEP_init();
 
 	TEST_run(&l, argv[1]);
 

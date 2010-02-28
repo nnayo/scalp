@@ -41,13 +41,16 @@
 
 #define NB_FRAMES	7
 
-#define MINIMAL_FILTER	_CM(FR_LOG_CMD)
+#define MINIMAL_FILTER	_CM(FR_LOG)
 
 #define NB_ORIG_FILTER	6
 
 #define SAVE_IN_RAM_ENABLED
 #ifdef SAVE_IN_RAM_ENABLED
-# define RAM_BUFFER_SIZE	30
+#ifndef DEBUG_EXTRA
+#define DEBUG_EXTRA	0
+#endif
+# define RAM_BUFFER_SIZE	(30 + DEBUG_EXTRA)
 #endif
 
 
@@ -113,6 +116,10 @@ static u8 LOG_find_eeprom_start(void)
 		// read the 2 first octets of the log at LOG.addr
 		EEP_read(LOG.eeprom_addr, buf, sizeof(buf));
 
+		// wait end of reading
+		while ( !EEP_is_fini() )
+			;
+
 		// if the read octets are erased eeprom
 		if ( (buf[0] == 0xff) && (buf[1] == 0xff) ) {
 			// the new log session start address is found (here)
@@ -152,6 +159,8 @@ static void LOG_find_sdcard_start(u8 eeprom_index)
 	while (1) {
 		// read the 2 first octets of the log at LOG.addr
 		SD_read(LOG.sdcard_addr, buf, sizeof(buf));
+		while ( !SD_is_fini() )
+			;
 
 		// if the read octets are erased eeprom
 		if ( (buf[0] == 0xff) && (buf[1] == 0xff) ) {
@@ -194,23 +203,23 @@ static void LOG_command(frame_t* fr)
 
 	// upon the sub-command
 	switch ( fr->argv[0] ) {
-	case FR_LOG_CMD_OFF:	// off
+	case FR_LOG_OFF:	// off
 		LOG.state = LOG_OFF;
 		break;
 
-	case FR_LOG_CMD_RAM:	// log to RAM
+	case FR_LOG_RAM:	// log to RAM
 		LOG.state = LOG_RAM;
 		break;
 
-	case FR_LOG_CMD_SDCARD:	// log to sdcard
+	case FR_LOG_SDCARD:	// log to sdcard
 		LOG.state = LOG_SDCARD;
 		break;
 
-	case FR_LOG_CMD_EEPROM:	// log to eeprom
+	case FR_LOG_EEPROM:	// log to eeprom
 		LOG.state = LOG_EEPROM;
 		break;
 
-	case FR_LOG_CMD_SET_LSB:	// set command filter LSB part
+	case FR_LOG_SET_LSB:	// set command filter LSB part
 		filter  = (u64)fr->argv[1] << 24;
 		filter &= (u64)fr->argv[2] << 16;
 		filter &= (u64)fr->argv[3] <<  8;
@@ -223,7 +232,7 @@ static void LOG_command(frame_t* fr)
 		LOG.interf.cmde_mask = filter;
 		break;
 
-	case FR_LOG_CMD_SET_MSB:	// set command filter MSB part
+	case FR_LOG_SET_MSB:	// set command filter MSB part
 		filter  = (u64)fr->argv[1] << 56;
 		filter &= (u64)fr->argv[2] << 48;
 		filter &= (u64)fr->argv[3] << 40;
@@ -236,7 +245,7 @@ static void LOG_command(frame_t* fr)
 		LOG.interf.cmde_mask = filter;
 		break;
 
-	case FR_LOG_CMD_GET_LSB:	// get command filter LSB part
+	case FR_LOG_GET_LSB:	// get command filter LSB part
 		// get the filter value
 		filter = LOG.interf.cmde_mask;
 
@@ -246,7 +255,7 @@ static void LOG_command(frame_t* fr)
 		fr->argv[4] = (u8)(filter >>  0);
 		break;
 
-	case FR_LOG_CMD_GET_MSB:	// get command filter MSB part
+	case FR_LOG_GET_MSB:	// get command filter MSB part
 		// get the filter value
 		filter = LOG.interf.cmde_mask;
 
@@ -256,11 +265,11 @@ static void LOG_command(frame_t* fr)
 		fr->argv[4] = (u8)(filter >> 32);
 		break;
 
-	case FR_LOG_CMD_SET_ORIG:	// set origin filter
+	case FR_LOG_SET_ORIG:	// set origin filter
 		memcpy(LOG.orig_filter, &fr->argv[1], NB_ORIG_FILTER);
 		break;
 
-	case FR_LOG_CMD_GET_ORIG:	// get origin filter
+	case FR_LOG_GET_ORIG:	// get origin filter
 		memcpy(&fr->argv[1], LOG.orig_filter, NB_ORIG_FILTER);
 		break;
 
@@ -282,6 +291,11 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 	u8 i;
 
 	PT_BEGIN(pt);
+
+	// systematically unlock the channel
+	// because most of time no response is sent
+	// when a response is needed, the channel will be locked
+	DPT_unlock(&LOG.interf);
 
 	switch ( LOG.state ) {
 		case LOG_OFF:
@@ -321,12 +335,15 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 	PT_WAIT_WHILE(pt, KO == FIFO_get(&LOG.in_fifo, &LOG.fr));
 
 	// if it is a log command
-	if ( (LOG.fr.cmde == FR_LOG_CMD) && (!LOG.fr.resp) ) {
+	if ( (LOG.fr.cmde == FR_LOG) && (!LOG.fr.resp) ) {
 		// treat it
 		LOG_command(&LOG.fr);
 
 		// send the response
+		DPT_lock(&LOG.interf);
 		PT_WAIT_UNTIL(pt, OK == DPT_tx(&LOG.interf, &LOG.fr));
+		DPT_unlock(&LOG.interf);
+
 
 		// and wait till the next frame
 		PT_RESTART(pt);
@@ -342,7 +359,7 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 		}
 	}
 
-	// if frame is filtered
+	// if frame is filtered away
 	if ( is_filtered ) {
 		// lop back for next frame
 		PT_RESTART(pt);
@@ -416,8 +433,9 @@ void LOG_init(void)
 
 	// origin filter blocks every node by default
 	memset(&LOG.orig_filter, 0xff, NB_ORIG_FILTER);
+	memset(&LOG.orig_filter, 0x00, NB_ORIG_FILTER);	// for debug, no filtering
 
-	LOG.state = LOG_OFF;
+	LOG.state = LOG_RAM;
 
 #ifdef SAVE_IN_RAM_ENABLED
 	LOG.ram_index = 0;
@@ -429,15 +447,18 @@ void LOG_init(void)
 
 	// register to dispatcher
 	LOG.interf.channel = 6;
-	LOG.interf.cmde_mask = MINIMAL_FILTER;
 	LOG.interf.queue = &LOG.in_fifo;
+#if 0	// for debug
 	LOG.interf.cmde_mask = _CM(FR_STATE)
 				| _CM(FR_MUX_RESET)
 				| _CM(FR_RECONF_MODE)
 				| _CM(FR_MINUT_TAKE_OFF)
-				| _CM(FR_MINUT_DOOR_CMD)
+				| _CM(FR_MINUT_DOOR)
 				| _CM(FR_SWITCH_POWER)
 				| MINIMAL_FILTER;
+#else
+	LOG.interf.cmde_mask = -1;
+#endif
 	DPT_register(&LOG.interf);
 }
 

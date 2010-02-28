@@ -173,7 +173,9 @@ static PT_THREAD( RCF_out(pt_t* pt) )
 
 	// send the reconf frame
 	DPT_lock(&RCF.interf);
-	PT_WAIT_UNTIL(pt, DPT_tx(&RCF.interf, &RCF.out));
+	if ( !DPT_tx(&RCF.interf, &RCF.out) ) {
+		FIFO_unget(&RCF.out_fifo, &RCF.out);
+	}
 
 	PT_RESTART(pt);
 
@@ -208,7 +210,7 @@ static PT_THREAD( RCF_in(pt_t* pt) )
 	}
 
 	// force bus mode handling
-	else if ( RCF.in.cmde == FR_RECONF_MODE ) {
+	else if ( (RCF.in.cmde == FR_RECONF_MODE) && !(RCF.in.resp || RCF.in.error || RCF.in.time_out) ) {
 		swap = RCF.in.orig;
 		RCF.in.orig = RCF.in.dest;
 		RCF.in.dest = swap;
@@ -283,8 +285,8 @@ void RCF_run(void)
 	(void)PT_SCHEDULE(RCF_out(&RCF.out_pt));
 	(void)PT_SCHEDULE(RCF_in(&RCF.in_pt));
 
-	// if out fifo is empty
-	if ( !FIFO_free(&RCF.out_fifo) ) {
+	// if fifoes are empty
+	if ( ( FIFO_full(&RCF.out_fifo) == 0 ) && ( FIFO_full(&RCF.out_fifo) == 0 ) ) {
 		// unlock the dispatcher
 		DPT_unlock(&RCF.interf);
 	}

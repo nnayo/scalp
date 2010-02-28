@@ -184,7 +184,7 @@ static PT_THREAD( ROUT_rout(pt_t* pt) )
 	PT_WAIT_UNTIL(pt, DPT_tx(&ROUT.interf, &ROUT.fr));
 
 	// unlock the channel if no more frame are unqueued
-	if ( !FIFO_free(&ROUT.in_fifo) ) {
+	if ( FIFO_full(&ROUT.in_fifo) == 0 ) {
 		DPT_unlock(&ROUT.interf);
 	}
 

@@ -52,17 +52,17 @@
 # define FR_RECONF_MODE_GET	0xff
 # define FR_RECONF_MODE_SET	0x00
 
-// LOG_CMD
-# define FR_LOG_CMD_SET_ORIG	0x3c
-# define FR_LOG_CMD_RAM	0x14
-# define FR_LOG_CMD_GET_LSB	0x2e
-# define FR_LOG_CMD_GET_ORIG	0x3f
-# define FR_LOG_CMD_EEPROM	0x1e
-# define FR_LOG_CMD_OFF	0x00
-# define FR_LOG_CMD_SDCARD	0x1a
-# define FR_LOG_CMD_GET_MSB	0x2f
-# define FR_LOG_CMD_SET_MSB	0x28
-# define FR_LOG_CMD_SET_LSB	0x27
+// LOG
+# define FR_LOG_SET_MSB	0x28
+# define FR_LOG_RAM	0x14
+# define FR_LOG_GET_LSB	0x2e
+# define FR_LOG_GET_MSB	0x2f
+# define FR_LOG_SDCARD	0x1a
+# define FR_LOG_GET_ORIG	0x3f
+# define FR_LOG_SET_LSB	0x27
+# define FR_LOG_EEPROM	0x1e
+# define FR_LOG_SET_ORIG	0x3c
+# define FR_LOG_OFF	0x00
 
 
 // --------------------------------------------
@@ -253,16 +253,24 @@ typedef enum {
 	// argv #1-2 value :
 	// - acceleration threshold for take-off in raw value
 	// argv #3-4 value :
-	// - acceleration threshold for take-off in raw value
+	// - acceleration threshold for take-off in raw value ????
 
-	FR_MINUT_DOOR_CMD = 0x16,
+	FR_MINUT_TIME_OUT = 0x16,
+	// save/read culmination time
+	// argv #0 value :
+	// - 0x00 : save
+	// - 0xff : read
+	// argv #1 value :
+	// - 0xVV : open time [0.0; 25.5] seconds
+
+	FR_MINUT_DOOR = 0x17,
 	// open/close door command
 	// argv #0 value :
 	// - 0x00 : open
 	// - 0xff : close
 	// - other : servo turn off
 
-	FR_MINUT_SERVO = 0x17,
+	FR_MINUT_SERVO = 0x18,
 	// save/read servo position for open/close door
 	// argv #0 value :
 	// - 0x00 : save
@@ -273,7 +281,7 @@ typedef enum {
 	// argv #2 value :
 	// - 0xVV : servo position [-100; 100] degrees
 
-	FR_SWITCH_POWER = 0x18,
+	FR_SWITCH_POWER = 0x19,
 	// switch nominal/redundant power supply ON/off
 	// argv #0 value :
 	// - 0x00 : redundant
@@ -282,7 +290,7 @@ typedef enum {
 	// - 0x00 : off
 	// - 0xff : ON
 
-	FR_READ_VOLTAGES = 0x19,
+	FR_READ_VOLTAGES = 0x1a,
 	// read nominal/redundant power supply voltage #0/#1/#2/#3
 	// argv #0 value :
 	// - 0x00 : nominal voltage #0
@@ -296,7 +304,7 @@ typedef enum {
 	// argv #1 value :
 	// - 0xVV : voltage [0.0; 25.5] Volts
 
-	FR_EMITTER_CMD = 0x1a,
+	FR_EMITTER = 0x1b,
 	// safeguard emitter control
 	// argv #0 value :
 	// - 0x00 : switch off
@@ -313,7 +321,7 @@ typedef enum {
 	// - other : ignored
 	// argv #1 value : for durations only (in 1/10 s)
 
-	FR_LOG_CMD = 0x1b,
+	FR_LOG = 0x1c,
 	// modify logging setup
 	// argv #0 cmde :
 	// - 0x00 : off
@@ -333,60 +341,55 @@ typedef enum {
 	// - 0x3f : get origin filter
 	// - argv #1 - #6 resp : filter value
 
-	FR_ROUT_LIST = 0x1c,
+	FR_ROUT_LIST = 0x1d,
 	// number of set routes
 	// argv #0 response : number of set routes
 
-	FR_ROUT_LINE = 0x1d,
+	FR_ROUT_LINE = 0x1e,
 	// retrieve a line content
 	// argv #0 request : requested line
 	// argv #1 response : virtual address
 	// argv #2 response : routed address
 	// argv #3 response : result OK (1) or ko (0)
 
-	FR_ROUT_ADD = 0x1e,
+	FR_ROUT_ADD = 0x1f,
 	// add a new route
 	// argv #0 request : virtual address
 	// argv #1 request : routed address
 	// argv #2 response : result OK (1) or ko (0)
 
-	FR_ROUT_DEL = 0x1f,
+	FR_ROUT_DEL = 0x20,
 	// delete a route
 	// argv #0 request : virtual address
 	// argv #1 request : routed address
 	// argv #2 response : result OK (1) or ko (0)
 
-	FR_DATA_ACC = 0x20,
+	FR_DATA_ACC = 0x21,
 	// acceleration data
 	// argv #0 - #1 : MSB - LSB X acceleration
 	// argv #2 - #3 : MSB - LSB Y acceleration
 	// argv #4 - #5 : MSB - LSB Z acceleration
 
-	FR_DATA_PRES = 0x21,
+	FR_DATA_PRES = 0x22,
 	// pressure data
 	// argv #0 - #1 : MSB - LSB x10 pressure with offset
 	// argv #2 - #3 : MSB - LSB raw pressure
 
-	FR_DATA_IO = 0x22,
+	FR_DATA_IO = 0x23,
 	// IO
 	// argv #0 : IO bits value
 
-	FR_DATA_ADC0 = 0x23,
+	FR_DATA_ADC0 = 0x24,
 	// ADC values
 	// argv #0 - #1 : MSB - LSB ADC 0
 	// argv #2 - #3 : MSB - LSB ADC 1
 	// argv #4 - #5 : MSB - LSB ADC 2
 
-	FR_DATA_ADC3 = 0x24,
+	FR_DATA_ADC3 = 0x25,
 	// ADC values
 	// argv #0 - #1 : MSB - LSB ADC 3
 	// argv #2 - #3 : MSB - LSB ADC 4
 	// argv #4 - #5 : MSB - LSB ADC 5
-
-	FR_DATA_ADC6 = 0x25,
-	// ADC values
-	// argv #0 - #1 : MSB - LSB ADC 6
-	// argv #2 - #3 : MSB - LSB ADC 7
 
 	FR_CPU = 0x26,
 	// CPU usage
@@ -405,7 +408,6 @@ typedef struct {
 	u8 dest;				// message destination
 	u8 orig;				// message origin
 	u8 t_id;				// transaction identifier
-	fr_cmdes_t cmde;		// message command
 	union {
 		u8 status;			// status field
 		struct {			// and its sub-parts
@@ -417,6 +419,7 @@ typedef struct {
 			u8 reserved:3;	// reserved for future use
 		};
 	};
+	fr_cmdes_t cmde;		// message command
 	u8 argv[FRAME_NB_ARGS];	// msg command argument(s) if any
 } frame_t;
 

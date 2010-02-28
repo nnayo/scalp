@@ -405,6 +405,14 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 // dispatcher initialization
 void DPT_init(void)
 {
+	u8 i;
+
+	// channels and lock reset
+	for ( i = 0; i < DPT_CHAN_NB; i++ ) {
+		DPT.channels[i] = NULL;
+	}
+	DPT.lock = 0;
+
 	// appli thread init
 	FIFO_init(&DPT.appli_fifo, &DPT.appli_buf, NB_APPLI_FRAMES, sizeof(frame_t));
 	PT_INIT(&DPT.appli_pt);
@@ -437,8 +445,8 @@ void DPT_run(void)
 		sei();
 	}
 
-	(void)PT_SCHEDULE(DPT_out(&DPT.in_pt));
-	(void)PT_SCHEDULE(DPT_in(&DPT.out_pt));
+	(void)PT_SCHEDULE(DPT_out(&DPT.out_pt));
+	(void)PT_SCHEDULE(DPT_in(&DPT.in_pt));
 	(void)PT_SCHEDULE(DPT_appli(&DPT.appli_pt));
 }
 

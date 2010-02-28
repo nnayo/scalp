@@ -37,7 +37,6 @@
 #define PCA9540B_ADDR	0x70	// I2C mux
 
 #define NB_IN			3		// incoming frames buffer size
-#define NB_OUT			5		// outgoing frames buffer size
 
 //--------------------------------------
 // private enums
@@ -66,9 +65,9 @@ static struct {
 	u8 index;					// index in current sending of the list
 
 	fifo_t in_fifo;				// incoming frames fifo
-	frame_t in_buf[NB_IN];	// incoming frames buffer
+	frame_t in_buf[NB_IN];		// incoming frames buffer
 
-	frame_t out;			// out going frame
+	frame_t out;				// out going frame
 
 	u8 tmp;						// all purpose temporary buffer
 
@@ -97,11 +96,8 @@ static PT_THREAD( DNA_scan_free(pt_t* pt) )
 		// send a frame to test if the I2C address is free
 		DNA.out.orig = 0;
 		DNA.out.dest = DNA.tmp;
-		DNA.out.resp = 0;
-		DNA.out.error = 0;
+		DNA.out.status = 0;
 		DNA.out.cmde = FR_I2C_READ;
-		DNA.out.eth = 0;
-		DNA.out.serial = 0;
 
 		// then send frame
 		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
@@ -153,11 +149,8 @@ static PT_THREAD( DNA_scan_bs(pt_t* pt) )
 		// send a frame to test if the I2C address is free
 		DNA.out.orig = 0;
 		DNA.out.dest = DNA.tmp;
-		DNA.out.resp = 0;
-		DNA.out.error = 0;
+		DNA.out.status = 0;
 		DNA.out.cmde = FR_I2C_READ;
-		DNA.out.eth = 0;
-		DNA.out.serial = 0;
 
 		// then send frame
 		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
@@ -223,11 +216,8 @@ static PT_THREAD( DNA_list_updater(pt_t* pt) )
 	// prebuild cmde header
 	DNA.out.dest = DPT_BROADCAST_ADDR;
 	DNA.out.orig = DNA_SELF_ADDR(DNA.list);
-	DNA.out.resp = 0;
-	DNA.out.error = 0;
+	DNA.out.status = 0;
 	DNA.out.argv[3] = 0x00;
-	DNA.out.eth = 0;
-	DNA.out.serial = 0;
 	
 	if ( DNA.index < DNA_LIST_SIZE ) {
 		// compose a FR_LINE command
@@ -286,8 +276,9 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 	DNA.out.orig = DNA_SELF_ADDR(DNA.list);
 	DNA.out.t_id = fr.t_id;
 	DNA.out.cmde = fr.cmde;
-	DNA.out.resp = 1;
 	DNA.out.error = 0;
+	DNA.out.resp = 1;
+	DNA.out.time_out = 0;
 	DNA.out.eth = fr.eth;
 	DNA.out.serial = fr.serial;
 	DNA.out.argv[0] = 0x00;
@@ -373,14 +364,21 @@ static u8 DNA_bc(void)
 static PT_THREAD( DNA_is_reg_wait(pt_t* pt, u8* ret) )
 {
 	frame_t fr;
+	u8 time_out;
 
 	PT_BEGIN(pt);
 
 	// wait for the time-out or the reception of the response
-	PT_WAIT_UNTIL(pt, (TIME_get() >= DNA.time) || (OK == (*ret = FIFO_get(&DNA.in_fifo, &fr))) );
+	PT_WAIT_UNTIL(pt, (time_out = (TIME_get() >= DNA.time)) || (OK == (*ret = FIFO_get(&DNA.in_fifo, &fr))) );
+
+	// if time-out occured
+	if (time_out) {
+		// wait is finished
+		PT_EXIT(pt);
+	}
 
 	// check whether the REGISTER resp is received
-	if ( (fr.cmde == FR_DNA_REGISTER) && fr.resp ) {
+	if ( (fr.cmde == FR_DNA_REGISTER) && fr.resp && !(fr.error || fr.time_out) ) {
 		// registering is done
 		// update reg nodes list
 		DNA.list[DNA_BC].type = DNA_BC;
@@ -393,6 +391,8 @@ static PT_THREAD( DNA_is_reg_wait(pt_t* pt, u8* ret) )
 		PT_EXIT(pt);
 	}
 
+	// probably a false trigger on frame reception
+	// so restart waiting for the answer or the time-out
 	PT_RESTART(pt);
 
 	PT_END(pt);
@@ -407,16 +407,13 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// compute the time-out time
-	DNA.time = TIME_get() + TIME_1_MSEC * 10;
+	DNA.time = TIME_get() + TIME_1_MSEC * 500;
 
 	// send the REGISTER cmde
 	DNA.out.dest = DPT_BROADCAST_ADDR;
 	DNA.out.orig = DNA_SELF_ADDR(DNA.list);
+	DNA.out.status = 0;
 	DNA.out.cmde = FR_DNA_REGISTER;
-	DNA.out.resp = 0;
-	DNA.out.error = 0;
-	DNA.out.eth = 0;
-	DNA.out.serial = 0;
 	DNA.out.argv[0] = DNA_SELF_ADDR(DNA.list);
 	DNA.out.argv[1] = DNA_SELF_TYPE(DNA.list);
 	PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK );
@@ -435,10 +432,7 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 			DNA.out.orig = DPT_SELF_ADDR;
 			DNA.out.dest = DPT_SELF_ADDR;
 			DNA.out.cmde = FR_RECONF_MODE;
-			DNA.out.resp = 0;
-			DNA.out.error = 0;
-			DNA.out.eth = 0;
-			DNA.out.serial = 0;
+			DNA.out.status = 0;
 			DNA.out.argv[0] = 0x00;	// set
 			DNA.out.argv[1] = 0x02;	// NONE
 			PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK );
@@ -525,6 +519,9 @@ void DNA_init(dna_t mode)
 	// save self config
 	DNA_SELF_TYPE(DNA.list) = mode;
 
+	// set fifoes
+	FIFO_init(&DNA.in_fifo, &DNA.in_buf, NB_IN, sizeof(DNA.in_buf[0]));
+
 	// register to the dispatcher
 	DNA.interf.channel = 2;
 	DNA.interf.cmde_mask = _CM(FR_DNA_REGISTER) | _CM(FR_DNA_LIST) | _CM(FR_DNA_LINE) | _CM(FR_I2C_WRITE) | _CM(FR_I2C_READ);
@@ -536,9 +533,6 @@ void DNA_init(dna_t mode)
 	// or
 	// until the IS is registered
 	DPT_lock(&DNA.interf);
-
-	// set fifoes
-	FIFO_init(&DNA.in_fifo, &DNA.in_buf, NB_IN, sizeof(DNA.in_buf[0]));
 }
 
 

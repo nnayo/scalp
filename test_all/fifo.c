@@ -1,5 +1,5 @@
 //---------------------
-//  Copyright (C) 2000-2008  <Yann GOUY>
+//  Copyright (C) 2000-2006  <Yann GOUY>
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
@@ -18,10 +18,15 @@
 //
 //  you can write to me at <yann_gouy@yahoo.fr>
 //
+//
+
 
 #include "utils/fifo.h"
 
-#include <string.h>	// memcpy()
+#include <avr/interrupt.h>	// cli()
+#include <avr/io.h>			// SREG
+
+#include <string.h>			// memcpy()
 
 
 void FIFO_init(fifo_t *f, void* buf, u16 nb_elem, u16 elem_size)
@@ -54,6 +59,26 @@ u8 FIFO_put(fifo_t *f, void* elem)
 }
 
 
+u8 FIFO_unput(fifo_t *f, void* elem)
+{
+	// if there's no element, quit
+	if (f->nb == 0) {
+		return KO;
+	}
+
+	// set the insertion pointer to the previous position
+	f->in -= f->elem_size;
+	if (f->in < f->donnees)
+		f->in = f->donnees + (f->lng - 1) * f->elem_size;
+
+	// get the element
+	memcpy(elem, f->in, f->elem_size);
+	f->nb--;
+
+	return OK;
+}
+
+
 u8 FIFO_get(fifo_t *f, void* elem)
 {
 	// if there's no element, quit
@@ -71,6 +96,27 @@ u8 FIFO_get(fifo_t *f, void* elem)
 		f->out = f->donnees;
 
 	return OK;
+}
+
+
+u8 FIFO_unget(fifo_t *f, void* elem)
+{
+	// if there's at least a free place
+	if (f->nb < f->lng) {
+		f->out -= f->elem_size;
+
+		// loop back at the begin
+		if (f->out < f->donnees)
+			f->out = f->donnees + (f->lng - 1) * f->elem_size;
+		f->nb++;
+
+		// add the new element
+		memcpy(f->out, elem, f->elem_size);
+
+		return OK;
+	} else {
+		return KO;
+	}
 }
 
 

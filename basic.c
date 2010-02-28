@@ -51,15 +51,25 @@ static struct {
 	u32	time_out;
 
 	// for incoming frames
-	pt_t	in_pt;						// proto-thread context
+	pt_t	in_pt;						// context
 	fifo_t	in_fifo;					// fifo
-	frame_t in_buf[NB_IN_FRAMES];	// buffer
+	frame_t in_buf[NB_IN_FRAMES];		// buffer
+	frame_t in;
 
 	// for response frames
 	pt_t	out_pt;						// context
 	fifo_t	out_fifo;					// fifo
-	frame_t out_buf[NB_OUT_FRAMES];	// buffer
+	frame_t out_buf[NB_OUT_FRAMES];		// buffer
 	frame_t out;
+
+	// for frame handling
+	pt_t	handling_pt;				// context
+	frame_t resp;						// response frame
+	frame_t cont;						// contained frame
+	u8 i;								// container index
+	u16* addr;							// address for read and write
+	u16 data;							// read or written data
+	u8 is_running:1;					// TRUE while processing a frame
 } BSC;
 
 
@@ -68,90 +78,110 @@ static struct {
 //
 
 // frame handling
-//static void BSC_frame_handling(frame_t* fr)
-void BSC_frame_handling(frame_t* fr)
+//static
+PT_THREAD(BSC_frame_handling(pt_t* pt))
 {
-	u8 i;
-	frame_t resp;		// response frame
-	frame_t cont_fr;	// contained frame
-	u16* addr;
-	u16 data = 0;
 	u32 time, delay;
 
+	PT_BEGIN(pt);
+
+	BSC.data = 0;
+	BSC.is_running = TRUE;
+
 	// if receiving a response or an error frame
-	if ( fr->resp | fr->error ) {
+	if ( BSC.in.resp || BSC.in.error ) {
 		// ignore it
-		return;
+		BSC.is_running = FALSE;
+		PT_EXIT(pt);
 	}
 
-	// build response frame header
-	resp.dest = fr->orig;
-	resp.orig = fr->dest;
-	resp.t_id = fr->t_id;
-	resp.resp = 1;
-	resp.error = fr->error;
-	resp.cmde = fr->cmde;
-	resp.eth = fr->eth;
-	resp.serial = fr->serial;
-
-	// and copy the 2 first argv values (in most cases, it's a time win)
-	resp.argv[0] = fr->argv[0];
-	resp.argv[1] = fr->argv[1];
+	// build response frame
+	BSC.resp.dest = BSC.in.orig;
+	BSC.resp.orig = BSC.in.dest;
+	BSC.resp.t_id = BSC.in.t_id;
+	BSC.resp.resp = 1;
+	BSC.resp.error = BSC.in.error;
+	BSC.resp.cmde = BSC.in.cmde;
+	BSC.resp.eth = BSC.in.eth;
+	BSC.resp.serial = BSC.in.serial;
+	BSC.resp.argv[0] = BSC.in.argv[0];
+	BSC.resp.argv[1] = BSC.in.argv[1];
+	BSC.resp.argv[2] = BSC.in.argv[2];
+	BSC.resp.argv[3] = BSC.in.argv[3];
+	BSC.resp.argv[4] = BSC.in.argv[4];
+	BSC.resp.argv[5] = BSC.in.argv[5];
 
 	// extract address (in most frames, the 2 first argv are an u16)
-	addr = (u16*)( (u16)(fr->argv[0] << 8) + fr->argv[1] );
+	BSC.addr = (u16*)( (u16)(BSC.in.argv[0] << 8) + BSC.in.argv[1] );
 
-	switch (fr->cmde) {
+	switch (BSC.in.cmde) {
 		case FR_NO_CMDE:
 			// nothing to do
 			break;
 
 		case FR_RAM_READ:
 			// read data
-			data = *addr;
+			BSC.data = *BSC.addr;
+			BSC.resp.argv[2] = (BSC.data & 0xff00) >> 8;
+			BSC.resp.argv[3] = (BSC.data & 0x00ff) >> 0;
 
 			break;
 
 		case FR_RAM_WRITE:
 			// extract data
-			data = (fr->argv[2] << 8) + fr->argv[3];
+			BSC.data = (BSC.in.argv[2] << 8) + BSC.in.argv[3];
 
 			// write data
-			*addr = data;
+			*BSC.addr = BSC.data;
 
 			// read back data
-			data = *addr;
+			BSC.data = *BSC.addr;
+			BSC.resp.argv[2] = (BSC.data & 0xff00) >> 8;
+			BSC.resp.argv[3] = (BSC.data & 0x00ff) >> 0;
 			break;
 
 		case FR_EEP_READ:
 			// read data
-			EEP_read((u16)addr, (u8*)&data, sizeof(u16));
+			EEP_read((u16)BSC.addr, (u8*)&BSC.data, sizeof(u16));
+
+			// wait until reading is done
+			PT_WAIT_UNTIL(pt, EEP_is_fini());
+
+			BSC.resp.argv[2] = (BSC.data & 0xff00) >> 8;
+			BSC.resp.argv[3] = (BSC.data & 0x00ff) >> 0;
 			break;
 
 		case FR_EEP_WRITE:
 			// extract data
-			data = (fr->argv[2] << 8) + fr->argv[3];
+			BSC.data = (BSC.in.argv[2] << 8) + BSC.in.argv[3];
 
 			// write data
-			EEP_write((u16)addr, (u8*)&data, sizeof(u16));
+			EEP_write((u16)BSC.addr, (u8*)&BSC.data, sizeof(u16));
 
-			// check if writing is done
-			while ( OK != EEP_is_fini() )
-				;
+			// wait until writing is done
+			PT_WAIT_UNTIL(pt, EEP_is_fini());
 
 			// read back data
-			EEP_read((u16)addr, (u8*)&data, sizeof(u16));
+			EEP_read((u16)BSC.addr, (u8*)&BSC.data, sizeof(u16));
+
+			// wait until reading is done
+			PT_WAIT_UNTIL(pt, EEP_is_fini());
+
+			BSC.resp.argv[2] = (BSC.data & 0xff00) >> 8;
+			BSC.resp.argv[3] = (BSC.data & 0x00ff) >> 0;
 			break;
 
 		case FR_FLH_READ:
 			// read data
-			data = pgm_read_word((u16)addr);
+			BSC.data = pgm_read_word((u16)BSC.addr);
+			BSC.resp.argv[2] = (BSC.data & 0xff00) >> 8;
+			BSC.resp.argv[3] = (BSC.data & 0x00ff) >> 0;
 			break;
 
 		case FR_FLH_WRITE:
 			// TODO : difficult to handle correctly
 			// right now, skip it by answering an error
-			resp.error = 1;
+			BSC.resp.error = 1;
 
 			// extract address
 			// write data
@@ -164,7 +194,7 @@ void BSC_frame_handling(frame_t* fr)
 			time = TIME_get();
 
 			// compute time at end of delay
-			delay = (u16)addr;
+			delay = (u16)BSC.addr;
 			delay *= TIME_1_MSEC;
 			delay += time;
 			BSC.time_out = delay;
@@ -177,37 +207,40 @@ void BSC_frame_handling(frame_t* fr)
 			// except perhaps for eeprom size optimization
 
 			// upon the memory storage zone
-			switch (fr->argv[3]) {
+			switch (BSC.in.argv[3]) {
 				case EEPROM_STORAGE:
 					// for each frame in the container
-					for ( i = 0; i < fr->argv[2]; i++) {
+					for ( BSC.i = 0; BSC.i < BSC.in.argv[2]; BSC.i++) {
 						// extract the frames from EEPROM
-						EEP_read((u16)((u8*)addr + i * sizeof(frame_t)), (u8*)&cont_fr, sizeof(frame_t));
+						EEP_read((u16)((u8*)BSC.addr + BSC.i * sizeof(frame_t)), (u8*)&BSC.cont, sizeof(frame_t));
+
+						// wait until reading is done
+						PT_WAIT_UNTIL(pt, EEP_is_fini());
 
 						// enqueue the contained frame
-						FIFO_put(&BSC.out_fifo, &cont_fr);
+						PT_WAIT_UNTIL(pt, FIFO_put(&BSC.out_fifo, &BSC.cont));
 					}
 					break;
 
 				case RAM_STORAGE:
 					// for each frame in the container
-					for ( i = 0; i < fr->argv[2]; i++) {
+					for ( BSC.i = 0; BSC.i < BSC.in.argv[2]; BSC.i++) {
 						// read the frame from RAM
-						cont_fr = *((frame_t *)((u8*)addr + i * sizeof(frame_t)));
+						BSC.cont = *((frame_t *)((u8*)BSC.addr + BSC.i * sizeof(frame_t)));
 
 						// enqueue the contained frame
-						FIFO_put(&BSC.out_fifo, &cont_fr);
+						PT_WAIT_UNTIL(pt, FIFO_put(&BSC.out_fifo, &BSC.cont));
 					}
 					break;
 
 				case FLASH_STORAGE:
 					// for each frame in the container
-					for ( i = 0; i < fr->argv[2]; i++) {
+					for ( BSC.i = 0; BSC.i < BSC.in.argv[2]; BSC.i++) {
 						// extract the frame from FLASH
-						memcpy_P(&cont_fr, (const void *)((u8*)addr + i * sizeof(frame_t)), sizeof(frame_t));
+						memcpy_P(&BSC.cont, (const void *)((u8*)BSC.addr + BSC.i * sizeof(frame_t)), sizeof(frame_t));
 
 						// enqueue the contained frame
-						FIFO_put(&BSC.out_fifo, &cont_fr);
+						PT_WAIT_UNTIL(pt, FIFO_put(&BSC.out_fifo, &BSC.cont));
 					}
 					break;
 
@@ -218,15 +251,18 @@ void BSC_frame_handling(frame_t* fr)
 				case PRE_4_STORAGE:
 				case PRE_5_STORAGE:
 					// extract the frame from EEPROM
-					EEP_read((u16)((u8*)addr + fr->argv[3] * sizeof(frame_t)), (u8*)&cont_fr, sizeof(frame_t));
+					EEP_read((u16)((u8*)BSC.addr + BSC.in.argv[3] * sizeof(frame_t)), (u8*)&BSC.cont, sizeof(frame_t));
+
+					// wait until reading is done
+					PT_WAIT_UNTIL(pt, EEP_is_fini());
 
 					// enqueue the contained frame
-					FIFO_put(&BSC.out_fifo, &cont_fr);
+					PT_WAIT_UNTIL(pt, FIFO_put(&BSC.out_fifo, &BSC.cont));
 					break;
 
 				default:
 					// frame format is invalid
-					resp.error = 1;
+					BSC.resp.error = 1;
 					break;
 				}
 
@@ -235,31 +271,32 @@ void BSC_frame_handling(frame_t* fr)
 		default:
 			// should never happen
 			// and in this case, ignore frame
-			return;
+			BSC.is_running = FALSE;
+			//PT_RESTART(pt);
+			PT_EXIT(pt);
 			break;
 	}
 
-	// set response frame arguments
-	// in most frames, it's a read u16
-	resp.argv[2] = (data & 0xff00) >> 8;
-	resp.argv[3] = (data & 0x00ff) >> 0;
-
 	// enqueue response
-	FIFO_put(&BSC.out_fifo, &resp);
+	PT_WAIT_UNTIL(pt, FIFO_put(&BSC.out_fifo, &BSC.resp));
+
+	// let's process the next frame
+	BSC.is_running = FALSE;
+	PT_EXIT(pt);
+
+	PT_END(pt);
 }
 
 
 PT_THREAD(BSC_in(pt_t* pt))
 {
-	frame_t fr;
-
 	PT_BEGIN(pt);
 
 	// dequeue the incomed frame if any
-	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.in_fifo, &fr));
+	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.in_fifo, &BSC.in));
 
 	// frame interpretation
-	BSC_frame_handling(&fr);
+	PT_SPAWN(pt, &BSC.handling_pt, BSC_frame_handling(&BSC.handling_pt));
 
 	// if the last handled frame was a wait one
 	// no other one will be treated before the time-out elapses
@@ -280,21 +317,18 @@ PT_THREAD(BSC_out(pt_t* pt))
 {
 	PT_BEGIN(pt);
 
-	// if no more response is available
-	if ( FIFO_full(&BSC.out_fifo) == 0 ) {
-		// unlock the dispatcher
-		DPT_unlock(&BSC.interf);
-	}
-
-	// dequeue the response frame if any
-	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.out_fifo, &BSC.out));
-
 	// if the last handled frame was a wait one
 	// no other one will be sent before the time-out elapses
 	PT_WAIT_WHILE(pt, 0 != BSC.time_out);
 
+	// dequeue the response frame if any
+	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.out_fifo, &BSC.out));
+
 	// be sure the response is sent
-	PT_WAIT_WHILE(pt, KO == DPT_tx(&BSC.interf, &BSC.out));
+	if ( KO == DPT_tx(&BSC.interf, &BSC.out) ) {
+		// else requeue the frame
+		FIFO_unget(&BSC.out_fifo, &BSC.out);
+	}
 
 	// let's wait the next response
 	PT_RESTART(pt);
@@ -322,6 +356,7 @@ void BSC_init(void)
 
 	// reset time-out
 	BSC.time_out = 0;
+	BSC.is_running = FALSE;
 
 	// register own call-back for specific commands
 	BSC.interf.channel = 0;
@@ -341,6 +376,8 @@ void BSC_init(void)
 
 	// read reset frame
 	EEP_read(0x00, (u8*)&fr, sizeof(frame_t));
+	while ( ! EEP_is_fini() )
+		;
 
 	// enqueue the reset frame
 	FIFO_put(&BSC.out_fifo, &fr);
@@ -357,4 +394,10 @@ void BSC_run(void)
 
 	// reponse frames handling
 	(void)PT_SCHEDULE(BSC_out(&BSC.out_pt));
+
+	// if all frames are handled
+	if ( !BSC.is_running && ( FIFO_full(&BSC.out_fifo) == 0 ) && ( FIFO_full(&BSC.in_fifo) == 0 ) ) {
+		// unlock the dispatcher
+		DPT_unlock(&BSC.interf);
+	}
 }

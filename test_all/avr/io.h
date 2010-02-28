@@ -1,5 +1,7 @@
 #define _BV(n)	(1 << n)
 
+#define PD2	2
+#define PD3	3
 #define PD4	4
 #define PD5	5
 
