@@ -19,9 +19,9 @@
 //  you can write to me at <yann_gouy@yahoo.fr>
 //
 
-#include "scalp/nat.h"
+#include "nat.h"
 
-#include "scalp/dispatcher.h"
+#include "dispatcher.h"
 
 #ifdef NAT_ENABLE_RS
 #include "drivers/rs.h"

@@ -19,9 +19,9 @@
 //  you can write to me at <yann_gouy@yahoo.fr>
 //
 
-#include "scalp/log.h"
+#include "log.h"
 
-#include "scalp/dispatcher.h"
+#include "dispatcher.h"
 
 #include "utils/pt.h"
 #include "utils/fifo.h"
@@ -41,7 +41,7 @@
 
 #define NB_FRAMES	7
 
-#define MINIMAL_FILTER	_CM(FR_LOG)
+#define MINIMAL_FILTER	_CM(FR_LOG_CMD)
 
 #define NB_ORIG_FILTER	6
 
@@ -203,23 +203,23 @@ static void LOG_command(frame_t* fr)
 
 	// upon the sub-command
 	switch ( fr->argv[0] ) {
-	case FR_LOG_OFF:	// off
+	case FR_LOG_CMD_OFF:	// off
 		LOG.state = LOG_OFF;
 		break;
 
-	case FR_LOG_RAM:	// log to RAM
+	case FR_LOG_CMD_RAM:	// log to RAM
 		LOG.state = LOG_RAM;
 		break;
 
-	case FR_LOG_SDCARD:	// log to sdcard
+	case FR_LOG_CMD_SDCARD:	// log to sdcard
 		LOG.state = LOG_SDCARD;
 		break;
 
-	case FR_LOG_EEPROM:	// log to eeprom
+	case FR_LOG_CMD_EEPROM:	// log to eeprom
 		LOG.state = LOG_EEPROM;
 		break;
 
-	case FR_LOG_SET_LSB:	// set command filter LSB part
+	case FR_LOG_CMD_SET_LSB:	// set command filter LSB part
 		filter  = (u64)fr->argv[1] << 24;
 		filter &= (u64)fr->argv[2] << 16;
 		filter &= (u64)fr->argv[3] <<  8;
@@ -232,7 +232,7 @@ static void LOG_command(frame_t* fr)
 		LOG.interf.cmde_mask = filter;
 		break;
 
-	case FR_LOG_SET_MSB:	// set command filter MSB part
+	case FR_LOG_CMD_SET_MSB:	// set command filter MSB part
 		filter  = (u64)fr->argv[1] << 56;
 		filter &= (u64)fr->argv[2] << 48;
 		filter &= (u64)fr->argv[3] << 40;
@@ -245,7 +245,7 @@ static void LOG_command(frame_t* fr)
 		LOG.interf.cmde_mask = filter;
 		break;
 
-	case FR_LOG_GET_LSB:	// get command filter LSB part
+	case FR_LOG_CMD_GET_LSB:	// get command filter LSB part
 		// get the filter value
 		filter = LOG.interf.cmde_mask;
 
@@ -255,7 +255,7 @@ static void LOG_command(frame_t* fr)
 		fr->argv[4] = (u8)(filter >>  0);
 		break;
 
-	case FR_LOG_GET_MSB:	// get command filter MSB part
+	case FR_LOG_CMD_GET_MSB:	// get command filter MSB part
 		// get the filter value
 		filter = LOG.interf.cmde_mask;
 
@@ -265,11 +265,11 @@ static void LOG_command(frame_t* fr)
 		fr->argv[4] = (u8)(filter >> 32);
 		break;
 
-	case FR_LOG_SET_ORIG:	// set origin filter
+	case FR_LOG_CMD_SET_ORIG:	// set origin filter
 		memcpy(LOG.orig_filter, &fr->argv[1], NB_ORIG_FILTER);
 		break;
 
-	case FR_LOG_GET_ORIG:	// get origin filter
+	case FR_LOG_CMD_GET_ORIG:	// get origin filter
 		memcpy(&fr->argv[1], LOG.orig_filter, NB_ORIG_FILTER);
 		break;
 
@@ -335,7 +335,7 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 	PT_WAIT_WHILE(pt, KO == FIFO_get(&LOG.in_fifo, &LOG.fr));
 
 	// if it is a log command
-	if ( (LOG.fr.cmde == FR_LOG) && (!LOG.fr.resp) ) {
+	if ( (LOG.fr.cmde == FR_LOG_CMD) && (!LOG.fr.resp) ) {
 		// treat it
 		LOG_command(&LOG.fr);
 

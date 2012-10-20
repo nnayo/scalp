@@ -19,10 +19,10 @@
 //  you can write to me at <yann_gouy@yahoo.fr>
 //
 
-#include "scalp/alive.h"
+#include "alive.h"
 
-#include "scalp/dispatcher.h"
-#include "scalp/dna.h"
+#include "dispatcher.h"
+#include "dna.h"
 
 #include "utils/time.h"
 #include "utils/pt.h"

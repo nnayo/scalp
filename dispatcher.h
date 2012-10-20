@@ -9,7 +9,7 @@
 // to send and receive data.
 // it also abstracts local and distant applications.
 //
-// thus a software bus is dedicated to locap applications exchanges
+// thus a software bus is dedicated to local applications exchanges
 // while distant ones go through the I2C bus.
 //
 // the dispatcher offers several prioritized channels to
@@ -33,7 +33,7 @@
 
 # include "type_def.h"
 
-# include "scalp/fr_cmdes.h"
+# include "fr_cmdes.h"
 
 # include "utils/fifo.h"
 
@@ -77,11 +77,13 @@ typedef struct {
 	fr_name.eth = _eth;													\
 	fr_name.serial = _serial;
 
-#define DPT_ARGS(fr_name, _argv0, _argv1, _argv2, _argv3)				\
+#define DPT_ARGS(fr_name, _argv0, _argv1, _argv2, _argv3, _argv4, _argv5)	\
 	fr_name.argv[0] = _argv0;											\
 	fr_name.argv[1] = _argv1;											\
 	fr_name.argv[2] = _argv2;											\
-	fr_name.argv[3] = _argv3;
+	fr_name.argv[1] = _argv3;												\
+	fr_name.argv[2] = _argv4;												\
+	fr_name.argv[3] = _argv5;
 
 
 //----------------------------------------

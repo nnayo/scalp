@@ -19,9 +19,9 @@
 //  you can write to me at <yann_gouy@yahoo.fr>
 //
 
-#include "scalp/basic.h"
+#include "basic.h"
 
-#include "scalp/dispatcher.h"
+#include "dispatcher.h"
 
 #include <avr/pgmspace.h>
 #include <string.h>

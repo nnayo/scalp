@@ -17,7 +17,7 @@
 #define __BASIC_H__
 
 
-#include "scalp/fr_cmdes.h"
+#include "fr_cmdes.h"
 
 //----------------------------------------
 // public defines

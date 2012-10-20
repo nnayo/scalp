@@ -19,9 +19,9 @@
 //  you can write to me at <yann_gouy@yahoo.fr>
 //
 
-#include "scalp/common.h"
+#include "common.h"
 
-#include "scalp/dispatcher.h"
+#include "dispatcher.h"
 
 #include "utils/time.h"
 #include "utils/pt.h"

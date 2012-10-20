@@ -49,9 +49,9 @@
 //            ----------+---------- twi
 //
 
-#include "scalp/dispatcher.h"
+#include "dispatcher.h"
 
-#include "scalp/routing_tables.h"
+#include "routing_tables.h"
 
 #include "drivers/twi.h"
 

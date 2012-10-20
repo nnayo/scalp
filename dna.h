@@ -141,7 +141,7 @@ then addresses starting with 0 are prioritary upon the others
 #ifndef __DNA_H__
 # define __DNA_H__
 
-# include "scalp/dna_list.h"	// all node types list
+# include "dna_list.h"	// all node types list
 
 # include "type_def.h"
 

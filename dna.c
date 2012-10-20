@@ -19,9 +19,9 @@
 //  you can write to me at <yann_gouy@yahoo.fr>
 //
 
-#include "scalp/dna.h"
+#include "dna.h"
 
-#include "scalp/dispatcher.h"
+#include "dispatcher.h"
 
 #include "utils/pt.h"		// PT_*
 #include "utils/pt_sem.h"	// PT_SEM_*

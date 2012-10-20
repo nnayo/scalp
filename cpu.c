@@ -6,7 +6,7 @@
 
 #include "cpu.h"
 
-#include "scalp/dispatcher.h"
+#include "dispatcher.h"
 
 #include "utils/time.h"
 #include "utils/fifo.h"
@@ -30,6 +30,7 @@ typedef struct {
 //
 
 #define NB_HIST		2
+#define FIFO_SIZE	1
 
 
 //-----------------------------------------------
@@ -39,7 +40,7 @@ typedef struct {
 static struct {
 	dpt_interface_t interf;		// dispatcher interface
 	fifo_t fifo;
-	frame_t buf[1];
+	frame_t buf[FIFO_SIZE];
 	frame_t fr;
 	pt_t pt;
 
@@ -113,6 +114,7 @@ static PT_THREAD(CPU_com(pt_t* pt))
 	CPU.fr.argv[5] = (CPU.min >> 0) & 0x00ff;
 
 	// send the response
+	DPT_lock(&CPU.interf);
 	PT_WAIT_UNTIL(pt, DPT_tx(&CPU.interf, &CPU.fr));
 	DPT_unlock(&CPU.interf);
 
@@ -152,13 +154,14 @@ void CPU_init(void)
 	// during a full period of stats
 	CPU.slp = SLP_register();
 
-	FIFO_init(&CPU.fifo, &CPU.buf, 1, sizeof(CPU.buf[0]));
+	FIFO_init(&CPU.fifo, &CPU.buf, FIFO_SIZE, sizeof(CPU.buf[0]));
 
 	// register to dispatcher
 	CPU.interf.channel = 10;
 	CPU.interf.queue = &CPU.fifo;
 	CPU.interf.cmde_mask = _CM(FR_CPU);
 	DPT_register(&CPU.interf);
+
 	PT_INIT(&CPU.pt);
 }
 

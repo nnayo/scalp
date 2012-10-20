@@ -21,7 +21,7 @@
 
 #include "routing_tables.h"
 
-#include "scalp/dispatcher.h"
+#include "dispatcher.h"
 
 #include "utils/pt.h"
 #include "utils/fifo.h"
