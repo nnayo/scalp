@@ -52,17 +52,17 @@
 # define FR_RECONF_MODE_GET	0xff
 # define FR_RECONF_MODE_SET	0x00
 
-// LOG
-# define FR_LOG_SET_MSB	0x28
-# define FR_LOG_RAM	0x14
-# define FR_LOG_GET_LSB	0x2e
-# define FR_LOG_GET_MSB	0x2f
-# define FR_LOG_SDCARD	0x1a
-# define FR_LOG_GET_ORIG	0x3f
-# define FR_LOG_SET_LSB	0x27
-# define FR_LOG_EEPROM	0x1e
-# define FR_LOG_SET_ORIG	0x3c
-# define FR_LOG_OFF	0x00
+// LOG_CMD
+# define FR_LOG_CMD_SET_ORIG	0x3c
+# define FR_LOG_CMD_RAM	0x14
+# define FR_LOG_CMD_GET_LSB	0x2e
+# define FR_LOG_CMD_GET_ORIG	0x3f
+# define FR_LOG_CMD_EEPROM	0x1e
+# define FR_LOG_CMD_OFF	0x00
+# define FR_LOG_CMD_SDCARD	0x1a
+# define FR_LOG_CMD_GET_MSB	0x2f
+# define FR_LOG_CMD_SET_MSB	0x28
+# define FR_LOG_CMD_SET_LSB	0x27
 
 
 // --------------------------------------------
@@ -206,6 +206,7 @@ typedef enum {
 	// - 0x06 : door opening asked		(minuterie only)
 	// - 0x07 : door open			(minuterie only)
 	// - 0x08 : door closing asked		(minuterie only)
+	// - 0x09 : parachute
 	// argv #2 value :
 	// - bit 7 <=> nominal bus U0 OK
 	// - bit 6 <=> nominal bus U1 OK
@@ -242,18 +243,18 @@ typedef enum {
 	// - 0x01 : redundant bus active
 	// - 0x02 : no bus active
 
-	FR_MINUT_TAKE_OFF = 0x14,
+	FR_TAKE_OFF = 0x14,
 	// take-off detected
 	// no arg
 
-	FR_MINUT_THRES = 0x15,
+	FR_TAKE_OFF_THRES = 0x15,
 	// take-off detection threshold config
 	// argv #0 value :
 	// - take-off threshold duration in *10 ms (0 -> 2550 ms)
 	// argv #1-2 value :
 	// - acceleration threshold for take-off in raw value
 	// argv #3-4 value :
-	// - acceleration threshold for take-off in raw value ????
+	// - acceleration threshold for take-off in raw value
 
 	FR_MINUT_TIME_OUT = 0x16,
 	// save/read culmination time
@@ -263,22 +264,28 @@ typedef enum {
 	// argv #1 value :
 	// - 0xVV : open time [0.0; 25.5] seconds
 
-	FR_MINUT_DOOR = 0x17,
-	// open/close door command
+	FR_MINUT_SERVO_CMD = 0x17,
+	// open/close servo command
 	// argv #0 value :
-	// - 0x00 : open
-	// - 0xff : close
-	// - other : servo turn off
+	// - 0xaa : cone
+	// - 0x55 : aero
+	// argv #1 value :
+	// - 0x09 : open
+	// - 0xc1 : close
+	// - 0x0f : servo turn off
 
-	FR_MINUT_SERVO = 0x18,
-	// save/read servo position for open/close door
+	FR_MINUT_SERVO_INFO = 0x18,
+	// save/read servo position
 	// argv #0 value :
+	// - 0xaa : cone
+	// - 0x55 : aero
+	// argv #1 value :
 	// - 0x00 : save
 	// - 0xff : read
-	// argv #1 value :
+	// argv #2 value :
 	// - 0x00 : open position
 	// - 0xff : close position
-	// argv #2 value :
+	// argv #3 value :
 	// - 0xVV : servo position [-100; 100] degrees
 
 	FR_SWITCH_POWER = 0x19,
@@ -304,7 +311,7 @@ typedef enum {
 	// argv #1 value :
 	// - 0xVV : voltage [0.0; 25.5] Volts
 
-	FR_EMITTER = 0x1b,
+	FR_EMITTER_CMD = 0x1b,
 	// safeguard emitter control
 	// argv #0 value :
 	// - 0x00 : switch off
@@ -321,7 +328,7 @@ typedef enum {
 	// - other : ignored
 	// argv #1 value : for durations only (in 1/10 s)
 
-	FR_LOG = 0x1c,
+	FR_LOG_CMD = 0x1c,
 	// modify logging setup
 	// argv #0 cmde :
 	// - 0x00 : off
@@ -370,28 +377,39 @@ typedef enum {
 	// argv #2 - #3 : MSB - LSB Y acceleration
 	// argv #4 - #5 : MSB - LSB Z acceleration
 
-	FR_DATA_PRES = 0x22,
+	FR_DATA_GYR = 0x22,
+	// acceleration data
+	// argv #0 - #1 : MSB - LSB X gyro
+	// argv #2 - #3 : MSB - LSB Y gyro
+	// argv #4 - #5 : MSB - LSB Z gyro
+
+	FR_DATA_PRES = 0x23,
 	// pressure data
 	// argv #0 - #1 : MSB - LSB x10 pressure with offset
 	// argv #2 - #3 : MSB - LSB raw pressure
 
-	FR_DATA_IO = 0x23,
+	FR_DATA_IO = 0x24,
 	// IO
 	// argv #0 : IO bits value
 
-	FR_DATA_ADC0 = 0x24,
+	FR_DATA_ADC0 = 0x25,
 	// ADC values
 	// argv #0 - #1 : MSB - LSB ADC 0
 	// argv #2 - #3 : MSB - LSB ADC 1
 	// argv #4 - #5 : MSB - LSB ADC 2
 
-	FR_DATA_ADC3 = 0x25,
+	FR_DATA_ADC3 = 0x26,
 	// ADC values
 	// argv #0 - #1 : MSB - LSB ADC 3
 	// argv #2 - #3 : MSB - LSB ADC 4
 	// argv #4 - #5 : MSB - LSB ADC 5
 
-	FR_CPU = 0x26,
+	FR_DATA_ADC6 = 0x27,
+	// ADC values
+	// argv #0 - #1 : MSB - LSB ADC 6
+	// argv #2 - #3 : MSB - LSB ADC 7
+
+	FR_CPU = 0x28,
 	// CPU usage
 	// argv #0 - #1 : MSB - LSB last 100 ms
 	// argv #2 - #3 : MSB - LSB max value
@@ -408,6 +426,7 @@ typedef struct {
 	u8 dest;				// message destination
 	u8 orig;				// message origin
 	u8 t_id;				// transaction identifier
+	fr_cmdes_t cmde;		// message command
 	union {
 		u8 status;			// status field
 		struct {			// and its sub-parts
@@ -419,9 +438,21 @@ typedef struct {
 			u8 reserved:3;	// reserved for future use
 		};
 	};
-	fr_cmdes_t cmde;		// message command
 	u8 argv[FRAME_NB_ARGS];	// msg command argument(s) if any
 } frame_t;
+
+
+extern u8 frame_set_0(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde);
+
+extern u8 frame_set_1(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 argv0);
+
+extern u8 frame_set_2(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 argv0, u8 argv1);
+
+extern u8 frame_set_3(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 argv0, u8 argv1, u8 argv2);
+
+extern u8 frame_set_4(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 argv0, u8 argv1, u8 argv2, u8 argv3);
+
+extern u8 frame_set_5(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 argv0, u8 argv1, u8 argv2, u8 argv3, u8 argv4);
 
 
 #endif	// __FRAMES_H__
