@@ -113,13 +113,7 @@ static void DPT_dispatch(frame_t* fr)
 {
 	u8 i;
 	fr_cmdes_t cmde = fr->cmde;
-	union {
-		struct {
-			u32 hi;
-			u32 lo;
-		};
-		u64 raw;
-	} mask;	// temporary variable to work-around a avr-gcc bug with 64bit
+	u64 mask;
 
 	// for each registered commands ranges
 	for (i = 0; i < DPT_CHAN_NB; i++) {
@@ -129,10 +123,7 @@ static void DPT_dispatch(frame_t* fr)
 			continue;
 
 		// if command is in a range
-		//if ( DPT.channels[i]->cmde_mask & _CM(cmde) ) {
-		mask.raw = DPT.channels[i]->cmde_mask;
-		mask.raw = mask.raw & _CM(cmde);
-		if ( mask.hi || mask.lo ) {
+		if ( DPT.channels[i]->cmde_mask & _CM(cmde) ) {
 			// enqueue it if a queue is available
 			if ( DPT.channels[i]->queue && (OK == FIFO_put(DPT.channels[i]->queue, fr)) ) {
 				// if a success, lock the channel
