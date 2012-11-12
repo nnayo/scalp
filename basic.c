@@ -379,6 +379,11 @@ void BSC_init(void)
 	while ( ! EEP_is_fini() )
 		;
 
+	// check if the frame is valid
+	if ( fr.dest == 0xff || fr.orig == 0xff || fr.cmde == 0xff || fr.status == 0xff ) {
+		return;
+	}
+
 	// enqueue the reset frame
 	FIFO_put(&BSC.out_fifo, &fr);
 
