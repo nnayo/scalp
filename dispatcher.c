@@ -113,7 +113,6 @@ static void DPT_dispatch(frame_t* fr)
 {
 	u8 i;
 	fr_cmdes_t cmde = fr->cmde;
-	u64 mask;
 
 	// for each registered commands ranges
 	for (i = 0; i < DPT_CHAN_NB; i++) {
@@ -228,11 +227,11 @@ static PT_THREAD( DPT_out(pt_t* pt) )
 	// in case of I2C read or write are taken from the DPT.hard frame
 	switch ( DPT.hard.cmde ) {
 		case FR_I2C_READ:
-			twi_res = TWI_ms_rx(DPT.hard.dest, DPT.hard.argv[0], (u8*)&DPT.hard + FRAME_ARGV_OFFSET + 1);
+			twi_res = TWI_ms_rx(DPT.hard.dest, DPT.hard.len, (u8*)&DPT.hard + FRAME_ARGV_OFFSET);
 			break;
 
 		case FR_I2C_WRITE:
-			twi_res = TWI_ms_tx(DPT.hard.dest, DPT.hard.argv[0], (u8*)&DPT.hard + FRAME_ARGV_OFFSET + 1);
+			twi_res = TWI_ms_tx(DPT.hard.dest, DPT.hard.len, (u8*)&DPT.hard + FRAME_ARGV_OFFSET);
 			break;
 
 		default:
