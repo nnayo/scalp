@@ -37,10 +37,10 @@
 #define OUT_SIZE	3
 #define IN_SIZE		1
 
-#define LED_PORT		PORTD
-#define LED_DDR			DDRD
-#define GREEN_LED		_BV(PD2)
-#define ORANGE_LED		_BV(PD3)
+#define LED_PORT		PORTB
+#define LED_DDR			DDRB
+#define GREEN_LED		_BV(PB5)
+#define ORANGE_LED		_BV(PB4)
 
 #define LED_STEP		(200 * TIME_1_MSEC)
 #define GREEN_BOTTOM	0
@@ -157,77 +157,120 @@ static PT_THREAD( CMN_in(pt_t* pt) )
 	CMN.fr.error = 0;
 
 	switch (CMN.fr.cmde) {
-		case FR_STATE:
-			switch (CMN.fr.argv[0]) {
-				case FR_STATE_GET:	// get state
-					// build the frame with the node state
-					CMN.fr.argv[1] = CMN.state;
+	case FR_STATE:
+		switch (CMN.fr.argv[0]) {
+		case FR_STATE_GET:	// get state
+			// build the frame with the node state
+			CMN.fr.argv[1] = CMN.state;
 
-					// and the bus state
-					CMN.fr.argv[2] = CMN.bus;
-					break;
+			// and the bus state
+			CMN.fr.argv[2] = CMN.bus;
+			break;
 
-				case FR_STATE_SET_BOTH:	// set state and bus
-					// save new node state
-					CMN.state = CMN.fr.argv[1];
+		case FR_STATE_SET_BOTH:	// set state and bus
+			// save new node state
+			CMN.state = CMN.fr.argv[1];
 
-					// save new bus state
-					CMN.bus = CMN.fr.argv[2];
-					break;
+			// save new bus state
+			CMN.bus = CMN.fr.argv[2];
+			break;
 
-				case FR_STATE_SET_STATE:	// set state only
-					// save new node state
-					CMN.state = CMN.fr.argv[1];
-					break;
+		case FR_STATE_SET_STATE:	// set state only
+			// save new node state
+			CMN.state = CMN.fr.argv[1];
+			break;
 
-				case FR_STATE_SET_BUS:	// set bus state only
-					// save new bus state
-					CMN.bus = CMN.fr.argv[2];
-					break;
+		case FR_STATE_SET_BUS:	// set bus state only
+			// save new bus state
+			CMN.bus = CMN.fr.argv[2];
+			break;
 
-				default:
-					CMN.fr.error = 1;
-					break;
+		default:
+			CMN.fr.error = 1;
+			break;
+		}
+		break;
+
+	case FR_TIME_GET:
+		// get local time
+		time.full = TIME_get();
+
+		// build frame
+		// (in AVR u32 representation is little endian)
+		CMN.fr.argv[0] = time.part[3];
+		CMN.fr.argv[1] = time.part[2];
+		CMN.fr.argv[2] = time.part[1];
+		CMN.fr.argv[3] = time.part[0];
+		break;
+
+	case FR_MUX_RESET:
+		switch (CMN.fr.argv[0]) {
+		case FR_MUX_RESET_RESET:
+			// reset PCA9543
+			// drive gate to 0
+			PORTD &= ~_BV(PD5);
+			break;
+
+		case FR_MUX_RESET_UNRESET:
+			// release PCA9543 reset pin
+			// drive gate to 1
+			PORTD |= _BV(PD5);
+			break;
+
+		default:
+			// reject command
+			CMN.fr.error = 1;
+			break;
+		}
+		break;
+
+	case FR_LED_CMD:
+		switch (CMN.fr.argv[0]) {
+		case 0xa1:	// green led
+			switch (CMN.fr.argv[1]) {
+			case 0x00:	// set
+				CMN.green_led_period = CMN.fr.argv[2] * 10 * TIME_1_MSEC;
+				break;
+
+			case 0xff:	// get
+				CMN.fr.argv[2] = CMN.green_led_period / (10 * TIME_1_MSEC);
+				break;
+
+			default:
+				// reject command
+				CMN.fr.error = 1;
+				break;
 			}
 			break;
 
-		case FR_TIME_GET:
-			// get local time
-			time.full = TIME_get();
+		case 0x09:	// green led
+			switch (CMN.fr.argv[1]) {
+			case 0x00:	// set
+				CMN.orange_led_period = CMN.fr.argv[2] * 10 * TIME_1_MSEC;
+				break;
 
-			// build frame
-			// (in AVR u32 representation is little endian)
-			CMN.fr.argv[0] = time.part[3];
-			CMN.fr.argv[1] = time.part[2];
-			CMN.fr.argv[2] = time.part[1];
-			CMN.fr.argv[3] = time.part[0];
-			break;
+			case 0xff:	// get
+				CMN.fr.argv[2] = CMN.orange_led_period / (10 * TIME_1_MSEC);
+				break;
 
-		case FR_MUX_RESET:
-			switch (CMN.fr.argv[0]) {
-				case FR_MUX_RESET_RESET:
-					// reset PCA9543
-					// drive gate to 0
-					PORTD &= ~_BV(PD5);
-					break;
-
-				case FR_MUX_RESET_UNRESET:
-					// release PCA9543 reset pin
-					// drive gate to 1
-					PORTD |= _BV(PD5);
-					break;
-
-				default:
-					// reject command
-					CMN.fr.error = 1;
-					break;
+			default:
+				// reject command
+				CMN.fr.error = 1;
+				break;
 			}
 			break;
 
 		default:
-			// reject frame
+			// reject command
 			CMN.fr.error = 1;
 			break;
+		}
+		break;
+
+	default:
+		// reject frame
+		CMN.fr.error = 1;
+		break;
 	}
 
 	// enqueue the response
@@ -245,59 +288,12 @@ static PT_THREAD( CMN_blink(pt_t* pt) )
 
 	PT_BEGIN(pt);
 
-	PT_WAIT_UNTIL(pt, CMN.time + 250 * TIME_1_MSEC < TIME_get());
+	PT_WAIT_UNTIL(pt, TIME_get() >= CMN.time);
 
-	// get current time
-	CMN.time += 250 * TIME_1_MSEC;
+	// update time-out
+	CMN.time += 10 * TIME_1_MSEC;
 
-	// led blinking periods depend on the flight phase
-	switch (CMN.state) {
-		case FR_STATE_READY:
-			CMN.green_led_period = 2 * TIME_1_SEC;
-			CMN.orange_led_period = TIME_MAX;
-			break;
-
-		case FR_STATE_WAIT_TAKE_OFF:
-			CMN.green_led_period = 500 * TIME_1_MSEC;
-			CMN.orange_led_period = TIME_MAX;
-			break;
-
-		case FR_STATE_WAIT_TAKE_OFF_CONF:
-			CMN.green_led_period = TIME_MAX;
-			CMN.orange_led_period = 500 * TIME_1_MSEC;
-			break;
-
-		case FR_STATE_FLYING:
-			CMN.green_led_period = TIME_MAX;
-			CMN.orange_led_period = 1 * TIME_1_SEC;
-			break;
-
-		case FR_STATE_WAIT_DOOR_OPEN:
-			CMN.green_led_period = TIME_MAX;
-			CMN.orange_led_period = 250 * TIME_1_MSEC;
-			break;
-
-		case FR_STATE_RECOVERY:
-			CMN.green_led_period = TIME_MAX;
-			CMN.orange_led_period = TIME_MAX;
-			break;
-
-		case FR_STATE_DOOR_OPENING:
-			CMN.green_led_period = TIME_MAX;
-			CMN.orange_led_period = TIME_MAX;
-			break;
-
-		case FR_STATE_DOOR_OPEN:
-			CMN.green_led_period = TIME_MAX;
-			CMN.orange_led_period = TIME_MAX;
-			break;
-
-		case FR_STATE_DOOR_CLOSING:
-			CMN.green_led_period = TIME_MAX;
-			CMN.orange_led_period = TIME_MAX;
-			break;
-	}
-
+	// blink green led
 	b.led = GREEN_LED;
 	b.pseudo_period = CMN.green_led_period;
 	b.top = GREEN_TOP;
@@ -305,6 +301,7 @@ static PT_THREAD( CMN_blink(pt_t* pt) )
 	blink_led(&b);
 	PT_YIELD(pt);
 
+	// blink orange led
 	b.led = ORANGE_LED;
 	b.pseudo_period = CMN.orange_led_period;
 	b.top = ORANGE_TOP;
@@ -343,7 +340,7 @@ void CMN_init(void)
 
 	// register own call-back for specific commands
 	CMN.interf.channel = 3;
-	CMN.interf.cmde_mask = _CM(FR_STATE) | _CM(FR_TIME_GET) | _CM(FR_MUX_RESET);
+	CMN.interf.cmde_mask = _CM(FR_STATE) | _CM(FR_TIME_GET) | _CM(FR_MUX_RESET) | _CM(FR_LED_CMD);
 	CMN.interf.queue = &CMN.in_fifo;
 	DPT_register(&CMN.interf);
 
