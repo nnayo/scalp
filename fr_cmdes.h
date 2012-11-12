@@ -16,7 +16,8 @@
 # define FRAME_ORIG_OFFSET	1
 # define FRAME_T_ID_OFFSET	2
 # define FRAME_CMDE_OFFSET	3
-# define FRAME_ARGV_OFFSET	4
+# define FRAME_STAT_OFFSET	4
+# define FRAME_ARGV_OFFSET	5
 
 // CONTAINER
 # define PRE_1_STORAGE	0x01
@@ -72,13 +73,13 @@
 typedef enum {
 	FR_I2C_READ = 0x00,
 	// raw I2C read
-	// argv #0 : number of octets to be read
-	// argv #1-... : read octets
+	// status.len : number of octets to be read
+	// argv #0-... : read octets
 
 	FR_I2C_WRITE = 0x01,
 	// raw I2C write
-	// argv #0 : number of octets to be written
-	// argv #1-... : octets to be written
+	// status.len : number of octets to be written
+	// argv #0-... : octets to be written
 
 	FR_NO_CMDE = 0x02,
 	// no command
@@ -137,17 +138,13 @@ typedef enum {
 
 	FR_SPI_READ = 0x09,
 	// SPI read
-	// argv #0:
-	// - number of octets to be read
-	// argv #1-... :
-	// - used if necessary
+	// status.len : number of octets to be read
+	// argv #0-... : used if necessary
 
 	FR_SPI_WRITE = 0x0a,
 	// SPI write
-	// argv #0:
-	// - number of octets to be written
-	// argv #1-... :
-	// - used if necessary
+	// status.len : number of octets to be written
+	// argv #0-... : used if necessary
 
 	FR_WAIT = 0x0b,
 	// wait some time given in ms
@@ -156,7 +153,7 @@ typedef enum {
 
 	FR_CONTAINER = 0x0c,
 	// encapsulated several other frames used for event handling
-	// argv #0, #1 value :
+	// argv #0-1 value :
 	// - offset in memory for the first encapsulated frame (MSB first)
 	// argv #2 value :
 	// - 0xVV : nb encapsulated frames
@@ -250,11 +247,9 @@ typedef enum {
 	FR_TAKE_OFF_THRES = 0x15,
 	// take-off detection threshold config
 	// argv #0 value :
-	// - take-off threshold duration in *10 ms (0 -> 2550 ms)
-	// argv #1-2 value :
-	// - acceleration threshold for take-off in raw value
-	// argv #3-4 value :
-	// - acceleration threshold for take-off in raw value
+	// - take-off threshold duration in *10 ms : [0ms; 2550ms]
+	// argv #1 value :
+	// - longitudinal acceleration threshold for take-off in 0.1G : [-12.8G; 12.7G]
 
 	FR_MINUT_TIME_OUT = 0x16,
 	// save/read culmination time
@@ -415,6 +410,17 @@ typedef enum {
 	// argv #2 - #3 : MSB - LSB max value
 	// argv #4 - #5 : MSB - LSB min value
 
+	FR_LED_CMD = 0x2a,
+	// set/get led blink rate
+	// argv #0 value :
+	// - 0xa1 : alive
+	// - 0x09 : open
+	// argv #1 value :
+	// - 0x00 : set
+	// - 0xff : get
+	// argv #2 value :
+	// - 0xVV : rate [0.00; 2.55] s
+
 	FR_LAST_CMDE = 0x3f,
 	// useless command but last in list
 
@@ -435,24 +441,26 @@ typedef struct {
 			u8 time_out:1;	// time-out flag
 			u8 eth:1;		// eth nat flag
 			u8 serial:1;	// serial nat flag
-			u8 reserved:3;	// reserved for future use
+			u8 len:3;	// length / number of arguments
 		};
 	};
 	u8 argv[FRAME_NB_ARGS];	// msg command argument(s) if any
 } frame_t;
 
 
-extern u8 frame_set_0(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde);
+extern u8 frame_set_0(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 len);
 
-extern u8 frame_set_1(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 argv0);
+extern u8 frame_set_1(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 len, u8 argv0);
 
-extern u8 frame_set_2(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 argv0, u8 argv1);
+extern u8 frame_set_2(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 len, u8 argv0, u8 argv1);
 
-extern u8 frame_set_3(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 argv0, u8 argv1, u8 argv2);
+extern u8 frame_set_3(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 len, u8 argv0, u8 argv1, u8 argv2);
 
-extern u8 frame_set_4(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 argv0, u8 argv1, u8 argv2, u8 argv3);
+extern u8 frame_set_4(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 len, u8 argv0, u8 argv1, u8 argv2, u8 argv3);
 
-extern u8 frame_set_5(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 argv0, u8 argv1, u8 argv2, u8 argv3, u8 argv4);
+extern u8 frame_set_5(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 len, u8 argv0, u8 argv1, u8 argv2, u8 argv3, u8 argv4);
+
+extern u8 frame_set_6(frame_t* fr, u8 dest, u8 orig, fr_cmdes_t cmde, u8 len, u8 argv0, u8 argv1, u8 argv2, u8 argv3, u8 argv4, u8 argv5);
 
 
 #endif	// __FRAMES_H__
