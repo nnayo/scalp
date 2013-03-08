@@ -53,6 +53,22 @@
 # define FR_RECONF_MODE_GET	0xff
 # define FR_RECONF_MODE_SET	0x00
 
+// MINUT_SERVO_CMD
+# define FR_SERVO_OFF	0x0f
+# define FR_SERVO_CLOSE	0xc1
+# define FR_SERVO_OPEN	0x09
+# define FR_SERVO_CONE	0xaa
+# define FR_SERVO_AERO	0x55
+
+// MINUT_SERVO_INFO
+# define FR_SERVO_SAVE	0x00
+# define FR_SERVO_OFF	0x0f
+# define FR_SERVO_OPEN	0x09
+# define FR_SERVO_AERO	0x55
+# define FR_SERVO_CONE	0xaa
+# define FR_SERVO_CLOSE	0xc1
+# define FR_SERVO_READ	0xff
+
 // LOG_CMD
 # define FR_LOG_CMD_SET_ORIG	0x3c
 # define FR_LOG_CMD_RAM	0x14
@@ -278,8 +294,8 @@ typedef enum {
 	// - 0x00 : save
 	// - 0xff : read
 	// argv #2 value :
-	// - 0x00 : open position
-	// - 0xff : close position
+	// - 0x09 : open position
+	// - 0xc1 : close position
 	// argv #3 value :
 	// - 0xVV : servo position [-100; 100] degrees
 
