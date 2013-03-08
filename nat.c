@@ -307,6 +307,7 @@ static PT_THREAD( NAT_rs_out(pt_t* pt) )
 	putchar(NAT.rs_out.dest);
 	putchar(NAT.rs_out.orig);
 	putchar(NAT.rs_out.t_id);
+	putchar(NAT.rs_out.cmde);
 	putchar( (NAT.rs_out.resp << 7) | (NAT.rs_out.error << 6) | (NAT.rs_out.time_out << 5) | (NAT.rs_out.eth << 4) | (NAT.rs_out.serial << 3) );
 	putchar(NAT.rs_out.argv[0]);
 	putchar(NAT.rs_out.argv[1]);
@@ -359,7 +360,7 @@ void NAT_init(void)
 	PT_INIT(&NAT.rs_in_pt);
 	FIFO_init(&NAT.rs_in_fifo, &NAT.rs_in_buf, QUEUE_SIZE, sizeof(NAT.rs_in_buf[0]));
 	NAT.time_out = 0;
-	RS_init(B57600);
+	RS_init(B115200);
 
 	PT_INIT(&NAT.rs_out_pt);
 	FIFO_init(&NAT.rs_out_fifo, &NAT.rs_out_buf, QUEUE_SIZE, sizeof(NAT.rs_out_buf[0]));
