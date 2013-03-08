@@ -119,13 +119,17 @@ static PT_THREAD( NAT_twi_in(pt_t* pt) )
 #endif
 #ifdef NAT_ENABLE_RS
 	// if the frame is for the serial link
+#ifndef NAT_FORCE_RS
 	if ( NAT.twi_in.serial ) {
+#endif
 		// suppress the serial flag
 		NAT.twi_in.serial = 0;
 
 		// send it via this link
 		PT_WAIT_UNTIL(pt, FIFO_put(&NAT.rs_out_fifo, &NAT.twi_in));
+#ifndef NAT_FORCE_RS
 	}
+#endif
 #endif
 
 	// loop back for processing next frame
@@ -267,10 +271,12 @@ static PT_THREAD( NAT_rs_in(pt_t* pt) )
 	PT_WAIT_WHILE(pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
 	NAT.rs_in.argv[5] = (u8)(c & 0xff);
 
+#if FRAME_NB_ARGS > 6
 	// next char (argv #6) is also subject of time-out
 	NAT.time_out += 5 * TIME_1_MSEC;
 	PT_WAIT_WHILE(pt, (TIME_get() < NAT.time_out) && (EOF == (c = getchar())) );
 	NAT.rs_in.argv[6] = (u8)(c & 0xff);
+#endif
 
 	// if a time-out happens
 	if ( TIME_get() >= NAT.time_out ) {
@@ -308,7 +314,9 @@ static PT_THREAD( NAT_rs_out(pt_t* pt) )
 	putchar(NAT.rs_out.argv[3]);
 	putchar(NAT.rs_out.argv[4]);
 	putchar(NAT.rs_out.argv[5]);
+#if FRAME_NB_ARGS > 6
 	putchar(NAT.rs_out.argv[6]);
+#endif
 
 	// loop back for processing next frame
 	PT_RESTART(pt);
@@ -351,7 +359,7 @@ void NAT_init(void)
 	PT_INIT(&NAT.rs_in_pt);
 	FIFO_init(&NAT.rs_in_fifo, &NAT.rs_in_buf, QUEUE_SIZE, sizeof(NAT.rs_in_buf[0]));
 	NAT.time_out = 0;
-	RS_init(B4800);
+	RS_init(B57600);
 
 	PT_INIT(&NAT.rs_out_pt);
 	FIFO_init(&NAT.rs_out_fifo, &NAT.rs_out_buf, QUEUE_SIZE, sizeof(NAT.rs_out_buf[0]));
