@@ -42,7 +42,7 @@
 #define GREEN_LED		_BV(PB5)
 #define ORANGE_LED		_BV(PB4)
 
-#define LED_STEP		(200 * TIME_1_MSEC)
+#define LED_STEP		(50 * TIME_1_MSEC)
 #define GREEN_BOTTOM	0
 #define GREEN_TOP		LED_STEP
 #define ORANGE_BOTTOM	GREEN_TOP

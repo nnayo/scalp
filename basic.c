@@ -27,6 +27,7 @@
 #include <string.h>
 
 #include "drivers/eeprom.h"
+#include "drivers/sleep.h"
 
 #include "utils/time.h"
 #include "utils/pt.h"
@@ -372,6 +373,8 @@ void BSC_init(void)
 	BSC.interf.queue = &BSC.in_fifo;
 	DPT_register(&BSC.interf);
 
+	// drivers init
+	SLP_init();
 	EEP_init();
 
 	// read reset frame

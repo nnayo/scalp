@@ -68,7 +68,7 @@ static void CPU_stats(void)
 	time = TIME_get();
 	if (time > CPU.time) {
 		// update new time loop end
-		CPU.time = TIME_get() + 100 * TIME_1_MSEC;
+		CPU.time += 100 * TIME_1_MSEC;
 
 		// save last loop count
 		CPU.hist[CPU.index] = CPU.stat;
@@ -148,7 +148,7 @@ void CPU_init(void)
 
 	// if CPU registers to SLP
 	// it will prevent any switch to sleep mode
-	// sometime must be done in CPU_run()
+	// something must be done in CPU_run()
 	// to call SLP_request() 
 	// and to remind the numbers of sleeps
 	// during a full period of stats
