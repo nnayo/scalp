@@ -437,8 +437,9 @@ typedef enum {
 	// argv #2 value :
 	// - 0xVV : rate [0.00; 2.55] s
 
-	FR_LAST_CMDE = 0x3f,
-	// useless command but last in list
+	FR_APPLI_START = 0x3f,
+	// application start signal
+	// and last command in list
 
 } fr_cmdes_t;
 
