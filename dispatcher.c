@@ -151,7 +151,7 @@ static PT_THREAD( DPT_appli(pt_t* pt) )
 	// no route
 	if ( nb_routes == 0 ) {
 		// so we will send it unmodify
-		// but twicking the resulting route
+		// but tweecking the resulting route
 		nb_routes = 1;
 		routes[0] = fr.dest;
 	}
@@ -275,6 +275,7 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 			// whatever the problem, put a failed resp in rx frame
 			// as the comm was locally initiated
 			// all the fields are those of DPT.hard frame
+			DPT.hard.orig = DPT.hard.dest;
 			DPT.hard.dest = DPT.sl_addr;
 			DPT.hard.resp = 1;
 			DPT.hard.error = 1;
