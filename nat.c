@@ -308,7 +308,7 @@ static PT_THREAD( NAT_rs_out(pt_t* pt) )
 	putchar(NAT.rs_out.orig);
 	putchar(NAT.rs_out.t_id);
 	putchar(NAT.rs_out.cmde);
-	putchar( (NAT.rs_out.resp << 7) | (NAT.rs_out.error << 6) | (NAT.rs_out.time_out << 5) | (NAT.rs_out.eth << 4) | (NAT.rs_out.serial << 3) );
+	putchar( (NAT.rs_out.error << 7) | (NAT.rs_out.resp << 6) | (NAT.rs_out.time_out << 5) | (NAT.rs_out.eth << 4) | (NAT.rs_out.serial << 3) | (NAT.rs_out.len << 0) );
 	putchar(NAT.rs_out.argv[0]);
 	putchar(NAT.rs_out.argv[1]);
 	putchar(NAT.rs_out.argv[2]);
@@ -338,7 +338,7 @@ void NAT_init(void)
 	PT_INIT(&NAT.twi_in_pt);
 	FIFO_init(&NAT.twi_in_fifo, &NAT.twi_in_buf, QUEUE_SIZE, sizeof(NAT.twi_in_buf[0]));
 	NAT.interf.channel = 5;
-	NAT.interf.cmde_mask = 0xffffffff;	// accept all commands
+	NAT.interf.cmde_mask = -1;	// accept all commands
 	NAT.interf.queue = &NAT.twi_in_fifo;
 	DPT_register(&NAT.interf);
 
