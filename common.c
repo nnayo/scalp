@@ -89,7 +89,6 @@ static struct {
 	frame_t fr;					// a buffer frame
 
 	cmn_state_t state;			// board state
-	cmn_bus_state_t bus;		// bus state
 } CMN;
 
 
@@ -162,27 +161,11 @@ static PT_THREAD( CMN_in(pt_t* pt) )
 		case FR_STATE_GET:	// get state
 			// build the frame with the node state
 			CMN.fr.argv[1] = CMN.state;
-
-			// and the bus state
-			CMN.fr.argv[2] = CMN.bus;
 			break;
 
-		case FR_STATE_SET_BOTH:	// set state and bus
+		case FR_STATE_SET:	// set state
 			// save new node state
 			CMN.state = CMN.fr.argv[1];
-
-			// save new bus state
-			CMN.bus = CMN.fr.argv[2];
-			break;
-
-		case FR_STATE_SET_STATE:	// set state only
-			// save new node state
-			CMN.state = CMN.fr.argv[1];
-			break;
-
-		case FR_STATE_SET_BUS:	// set bus state only
-			// save new bus state
-			CMN.bus = CMN.fr.argv[2];
 			break;
 
 		default:
@@ -226,13 +209,13 @@ static PT_THREAD( CMN_in(pt_t* pt) )
 
 	case FR_LED_CMD:
 		switch (CMN.fr.argv[0]) {
-		case 0xa1:	// green led
+		case FR_LED_ALIVE:	// green led
 			switch (CMN.fr.argv[1]) {
-			case 0x00:	// set
+			case FR_LED_SET:	// set
 				CMN.green_led_period = CMN.fr.argv[2] * 10 * TIME_1_MSEC;
 				break;
 
-			case 0xff:	// get
+			case FR_LED_GET:	// get
 				CMN.fr.argv[2] = CMN.green_led_period / (10 * TIME_1_MSEC);
 				break;
 
@@ -243,13 +226,13 @@ static PT_THREAD( CMN_in(pt_t* pt) )
 			}
 			break;
 
-		case 0x09:	// green led
+		case FR_LED_OPEN:	// orange led
 			switch (CMN.fr.argv[1]) {
-			case 0x00:	// set
+			case FR_LED_SET:	// set
 				CMN.orange_led_period = CMN.fr.argv[2] * 10 * TIME_1_MSEC;
 				break;
 
-			case 0xff:	// get
+			case FR_LED_GET:	// get
 				CMN.fr.argv[2] = CMN.orange_led_period / (10 * TIME_1_MSEC);
 				break;
 
@@ -333,7 +316,6 @@ void CMN_init(void)
 
 	// variables init
 	CMN.state = READY;
-	CMN.bus = NONE;
 	CMN.green_led_period = TIME_MAX;
 	CMN.orange_led_period = TIME_MAX;
 	CMN.time = 0;

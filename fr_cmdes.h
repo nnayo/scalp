@@ -31,19 +31,19 @@
 # define EEPROM_STORAGE	0xee
 
 // STATE
-# define FR_STATE_WAIT_DOOR_OPEN	0x04
-# define FR_STATE_RECOVERY	0x05
-# define FR_STATE_SET_BUS	0x9c
-# define FR_STATE_SET_BOTH	0x7a
-# define FR_STATE_GET	0x00
-# define FR_STATE_DOOR_CLOSING	0x08
-# define FR_STATE_SET_STATE	0x8b
-# define FR_STATE_DOOR_OPENING	0x06
-# define FR_STATE_FLYING	0x03
-# define FR_STATE_READY	0x00
-# define FR_STATE_WAIT_TAKE_OFF_CONF	0x02
-# define FR_STATE_WAIT_TAKE_OFF	0x01
-# define FR_STATE_DOOR_OPEN	0x07
+# define FR_STATE_BRAKING	0x40
+# define FR_STATE_CONE_CLOSED	0x05
+# define FR_STATE_PARACHUTE	0x50
+# define FR_STATE_INIT	0x00
+# define FR_STATE_AERO_OPEN	0x03
+# define FR_STATE_WAITING	0x10
+# define FR_STATE_GET	0x9e
+# define FR_STATE_CONE_OPENING	0x01
+# define FR_STATE_SET	0x5e
+# define FR_STATE_FLIGHT	0x20
+# define FR_STATE_CONE_OPEN	0x30
+# define FR_STATE_AERO_OPENING	0x02
+# define FR_STATE_CONE_CLOSING	0x04
 
 // MUX_RESET
 # define FR_MUX_RESET_UNRESET	0x00
@@ -57,17 +57,17 @@
 # define FR_SERVO_OFF	0x0f
 # define FR_SERVO_CLOSE	0xc1
 # define FR_SERVO_OPEN	0x09
-# define FR_SERVO_CONE	0xaa
-# define FR_SERVO_AERO	0x55
+# define FR_SERVO_CONE	0xc0
+# define FR_SERVO_AERO	0xae
 
 // MINUT_SERVO_INFO
-# define FR_SERVO_SAVE	0x00
+# define FR_SERVO_SAVE	0x5a
 # define FR_SERVO_OFF	0x0f
 # define FR_SERVO_OPEN	0x09
-# define FR_SERVO_AERO	0x55
-# define FR_SERVO_CONE	0xaa
+# define FR_SERVO_AERO	0xae
+# define FR_SERVO_CONE	0xc0
 # define FR_SERVO_CLOSE	0xc1
-# define FR_SERVO_READ	0xff
+# define FR_SERVO_READ	0x4e
 
 // LOG_CMD
 # define FR_LOG_CMD_SET_ORIG	0x3c
@@ -80,6 +80,12 @@
 # define FR_LOG_CMD_GET_MSB	0x2f
 # define FR_LOG_CMD_SET_MSB	0x28
 # define FR_LOG_CMD_SET_LSB	0x27
+
+// LED_CMD
+# define FR_LED_GET	0xff
+# define FR_LED_OPEN	0x09
+# define FR_LED_ALIVE	0xa1
+# define FR_LED_SET	0x00
 
 
 // --------------------------------------------
@@ -205,30 +211,20 @@ typedef enum {
 	FR_STATE = 0x10,
 	// state (retrieve / modify)
 	// argv #0 value :
-	// - 0x00 : get
-	// - 0x7a : set state and bus
-	// - 0x8b : set state only
-	// - 0x9c : set bus only
+	// - 0x9e : get state
+	// - 0x5e : set state
 	// argv #1 value :
-	// - 0x00 : ready				(default out of reset)
-	// - 0x01 : waiting for take-off
-	// - 0x02 : waiting take-off confirmation	(minuterie only)
-	// - 0x03 : flying
-	// - 0x04 : waiting door open		(minuterie only)
-	// - 0x05 : recovery
-	// - 0x06 : door opening asked		(minuterie only)
-	// - 0x07 : door open			(minuterie only)
-	// - 0x08 : door closing asked		(minuterie only)
-	// - 0x09 : parachute
-	// argv #2 value :
-	// - bit 7 <=> nominal bus U0 OK
-	// - bit 6 <=> nominal bus U1 OK
-	// - bit 5 <=> nominal bus U2 OK
-	// - bit 4 <=> nominal bus Uext ON
-	// - bit 3 <=> redundant bus U0 OK
-	// - bit 2 <=> redundant bus U1 OK
-	// - bit 1 <=> redundant bus U2 OK
-	// - bit 0 <=> redundant bus Uext ON
+	// - 0x00 : init				(default out of reset)
+	// - 0x01 : cone opening
+	// - 0x02 : aero opening
+	// - 0x03 : aero open
+	// - 0x04 : cone closing
+	// - 0x05 : cone closed
+	// - 0x10 : waiting
+	// - 0x20 : flight
+	// - 0x30 : cone open
+	// - 0x40 : braking
+	// - 0x50 : parachute
 
 	FR_TIME_GET = 0x11,
 	// retrieve on-board time
@@ -278,8 +274,8 @@ typedef enum {
 	FR_MINUT_SERVO_CMD = 0x17,
 	// open/close servo command
 	// argv #0 value :
-	// - 0xaa : cone
-	// - 0x55 : aero
+	// - 0xc0 : cone
+	// - 0xae : aero
 	// argv #1 value :
 	// - 0x09 : open
 	// - 0xc1 : close
@@ -288,11 +284,11 @@ typedef enum {
 	FR_MINUT_SERVO_INFO = 0x18,
 	// save/read servo position
 	// argv #0 value :
-	// - 0xaa : cone
-	// - 0x55 : aero
+	// - 0xc0 : cone
+	// - 0xae : aero
 	// argv #1 value :
-	// - 0x00 : save
-	// - 0xff : read
+	// - 0x5a : save
+	// - 0x4e : read
 	// argv #2 value :
 	// - 0x09 : open position
 	// - 0xc1 : close position
