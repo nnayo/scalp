@@ -259,7 +259,7 @@ typedef enum {
 	FR_TAKE_OFF_THRES = 0x15,
 	// take-off detection threshold config
 	// argv #0 value :
-	// - take-off threshold duration in *10 ms : [0ms; 2550ms]
+	// - take-off threshold duration in *100 ms : [0ms; 25.5s]
 	// argv #1 value :
 	// - longitudinal acceleration threshold for take-off in 0.1G : [-12.8G; 12.7G]
 
