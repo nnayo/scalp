@@ -3,7 +3,7 @@ import os
 MCU_TARGET      = 'atmega328p'
 OPTIMIZE        = '-Os -mcall-prologues -fshort-enums '
 includes	= ['.', os.environ['TROLL_PROJECTS'] + '/nanoK']
-CFLAGS		= '-g -Wall ' + OPTIMIZE + '-mmcu=' + MCU_TARGET
+CFLAGS		= '-g -Wall -Wextra ' + OPTIMIZE + '-mmcu=' + MCU_TARGET
 
 env = Environment(
 	ENV = os.environ,       \
