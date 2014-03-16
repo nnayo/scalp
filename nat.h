@@ -48,8 +48,8 @@
 //
 
 // configuration flags to reduce memory usage
-#define NAT_ENABLE_RS
-#define NAT_FORCE_RS
+//#define NAT_ENABLE_RS
+//#define NAT_FORCE_RS
 //#define NAT_ENABLE_ETH
 
 //----------------------------------------
