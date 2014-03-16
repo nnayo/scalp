@@ -23,6 +23,8 @@
 
 #include "dispatcher.h"
 
+#include "drivers/twi.h"
+
 #include "utils/pt.h"		// PT_*
 #include "utils/pt_sem.h"	// PT_SEM_*
 #include "utils/time.h"		// TIME_*
@@ -93,6 +95,9 @@ static PT_THREAD( DNA_scan_free(pt_t* pt) )
 
 	// scan all the IS address range
 	while (1) {
+		// reserve the I2C address
+		TWI_set_sl_addr(DNA.tmp);
+
 		// send a frame to test if the I2C address is free
 		DNA.out.orig = 0;
 		DNA.out.dest = DNA.tmp;
@@ -255,7 +260,6 @@ static PT_THREAD( DNA_list_updater(pt_t* pt) )
 static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 {
 	frame_t fr;
-	u8 addr;
 
 	PT_BEGIN(pt);
 
@@ -289,7 +293,6 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 	switch (fr.cmde) {
 		case FR_DNA_REGISTER:
 			// an IS is registering
-			addr = fr.orig;
 
 			// check if there is some place left in the list
 			if ( DNA.nb_is + 1 + DNA.nb_bs < DNA_LIST_SIZE - DNA_BC ) {
@@ -558,7 +561,7 @@ u8 DNA_run(void)
 	// when acting as a BC
 	if ( DNA_SELF_TYPE(DNA.list) == DNA_BC ) {
 		// find every BS
-		PT_SPAWN(&DNA.pt, &DNA.pt2, DNA_scan_bs(&DNA.pt2));
+		//PT_SPAWN(&DNA.pt, &DNA.pt2, DNA_scan_bs(&DNA.pt2));
 
 		// scannings are finished, so release the channel
 		DPT_unlock(&DNA.interf);
