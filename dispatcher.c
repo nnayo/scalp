@@ -343,9 +343,7 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 			break;
 
 		case TWI_SL_TX_END:
-			// release the bus
-			TWI_stop();
-
+			// the bus will be released by hardware
 			break;
 
 		case TWI_GENCALL_BEGIN:
