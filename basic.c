@@ -391,6 +391,8 @@ void BSC_init(void)
 				| _CM(FR_EEP_WRITE)
 				| _CM(FR_FLH_READ)
 				| _CM(FR_FLH_WRITE)
+				| _CM(FR_SPI_READ)
+				| _CM(FR_SPI_WRITE)
 				| _CM(FR_WAIT)
 				| _CM(FR_CONTAINER);
 	BSC.interf.queue = &BSC.in_fifo;
