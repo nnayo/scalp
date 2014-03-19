@@ -30,7 +30,6 @@ typedef struct {
 //
 
 #define NB_HIST		2
-#define FIFO_SIZE	1
 
 
 //-----------------------------------------------
@@ -38,16 +37,15 @@ typedef struct {
 //
 
 static struct {
-	dpt_interface_t interf;		// dispatcher interface
-	fifo_t fifo;
-	frame_t buf[FIFO_SIZE];
-	frame_t fr;
 	pt_t pt;
+
+	dpt_interface_t interf;		// dispatcher interface
+	frame_t fr;
 
 	u32 time;					// stats update time-out
 	cpu_t stat;
 
-	u8 index;
+	u8 index:1;
 	cpu_t hist[NB_HIST];
 	u16 min;
 	u16 max;
@@ -60,7 +58,7 @@ static struct {
 // private functions
 //
 
-static void CPU_stats(void)
+void CPU_stats(void)
 {
 	u32 time;
 
@@ -68,13 +66,11 @@ static void CPU_stats(void)
 	time = TIME_get();
 	if (time > CPU.time) {
 		// update new time loop end
-		CPU.time += 100 * TIME_1_MSEC;
+		CPU.time += TIME_1_SEC;
 
 		// save last loop count
 		CPU.hist[CPU.index] = CPU.stat;
 		CPU.index++;
-		if (CPU.index >= NB_HIST)
-			CPU.index = 0;
 
 		// update stats
 		if (CPU.stat.cnt > CPU.max)
@@ -100,11 +96,13 @@ static PT_THREAD(CPU_com(pt_t* pt))
 
 	PT_BEGIN(pt);
 
-	// wait until a new frame is received
-	PT_WAIT_UNTIL(pt, FIFO_get(&CPU.fifo, &CPU.fr) && !CPU.fr.resp);
+	// every 2 seconds (with an offset of 1s)
+	PT_WAIT_UNTIL(pt, CPU.index == 0);
 
-	// build the response
-	CPU.fr.resp = 1;
+	// send the stats
+	CPU.fr.dest = DPT_BROADCAST_ADDR;
+	CPU.fr.orig = DPT_SELF_ADDR;
+	CPU.fr.cmde = FR_CPU;
 	index = (CPU.index - 1) % NB_HIST;
 	CPU.fr.argv[0] = (CPU.hist[index].cnt >> 8) & 0x00ff;
 	CPU.fr.argv[1] = (CPU.hist[index].cnt >> 0) & 0x00ff;
@@ -154,12 +152,10 @@ void CPU_init(void)
 	// during a full period of stats
 	CPU.slp = SLP_register();
 
-	FIFO_init(&CPU.fifo, &CPU.buf, FIFO_SIZE, sizeof(CPU.buf[0]));
-
 	// register to dispatcher
 	CPU.interf.channel = 10;
-	CPU.interf.queue = &CPU.fifo;
-	CPU.interf.cmde_mask = _CM(FR_CPU);
+	CPU.interf.queue = NULL;
+	CPU.interf.cmde_mask = 0;
 	DPT_register(&CPU.interf);
 
 	PT_INIT(&CPU.pt);
@@ -170,6 +166,6 @@ void CPU_run(void)
 {
 	CPU_stats();
 
-	(void)PT_SCHEDULE(CPU_com(&CPU.pt));
+	(void)CPU_com(&CPU.pt);
 }
 
