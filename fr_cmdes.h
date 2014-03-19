@@ -431,7 +431,9 @@ typedef enum {
 	// - 0x00 : set
 	// - 0xff : get
 	// argv #2 value :
-	// - 0xVV : rate [0.00; 2.55] s
+	// - 0xVV : low duration [0.00; 2.55] s
+	// argv #3 value :
+	// - 0xVV : high duration [0.00; 2.55] s
 
 	FR_APPLI_START = 0x3f,
 	// application start signal

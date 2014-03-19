@@ -1090,7 +1090,9 @@ class led_cmd(Frame):
 		- 0x00 : set
 		- 0xff : get
 	argv #2 value :
-		- 0xVV : rate [0.00; 2.55] s
+		- 0xVV : low duration [0.00; 2.55] s
+	argv #3 value :
+		- 0xVV : high duration [0.00; 2.55] s
 	"""
 	cmde = 0x2a
 
