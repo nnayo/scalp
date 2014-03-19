@@ -42,25 +42,16 @@
 #define GREEN_LED		_BV(PB5)
 #define ORANGE_LED		_BV(PB4)
 
-#define LED_STEP		(50 * TIME_1_MSEC)
-#define GREEN_BOTTOM	0
-#define GREEN_TOP		LED_STEP
-#define ORANGE_BOTTOM	GREEN_TOP
-#define ORANGE_TOP		(ORANGE_BOTTOM + LED_STEP)
-
 
 //--------------------------------------------
 // private structures
 //
 
-typedef struct {
-	u8 led;
-	u32 pseudo_period;
-	u32 top;
-	u32 bottom;
-} blink_t;
-
-
+typedef struct led_t {
+	u8 lo;					// low level duration in 10 ms
+	u8 hi;					// high level duration in 10 ms
+	u8 cnt;					// current counter
+} _led_t;
 
 //----------------------------------------
 // private variables
@@ -73,8 +64,7 @@ static struct {
 	pt_t out_pt;				// emission thread context
 	pt_t blink_pt;				// leds blinking thread context
 
-	u32 green_led_period;		// green led blinking period
-	u32 orange_led_period;		// orange led blinking period
+	struct led_t green_led, orange_led;	// led blinking condition
 
 	u32 time;
 
@@ -95,22 +85,6 @@ static struct {
 //----------------------------------------
 // private functions
 //
-
-void blink_led(blink_t* const b)
-{
-	u32 modulo = CMN.time % b->pseudo_period;
-
-	// led is ON between BOTTOM and TOP
-	if ( (modulo >= b->bottom) && (modulo < b->top) ) {
-		// led ON
-		LED_PORT |= b->led;
-	}
-	else {
-		// led off
-		LED_PORT &= ~b->led;
-	}
-}
-
 
 static PT_THREAD( CMN_out(pt_t* pt) )
 {
@@ -212,11 +186,13 @@ static PT_THREAD( CMN_in(pt_t* pt) )
 		case FR_LED_ALIVE:	// green led
 			switch (CMN.fr.argv[1]) {
 			case FR_LED_SET:	// set
-				CMN.green_led_period = CMN.fr.argv[2] * 10 * TIME_1_MSEC;
+				CMN.green_led.lo = CMN.fr.argv[2];
+				CMN.green_led.hi = CMN.fr.argv[3];
 				break;
 
 			case FR_LED_GET:	// get
-				CMN.fr.argv[2] = CMN.green_led_period / (10 * TIME_1_MSEC);
+				CMN.fr.argv[2] = CMN.green_led.lo;
+				CMN.fr.argv[3] = CMN.green_led.hi;
 				break;
 
 			default:
@@ -229,11 +205,13 @@ static PT_THREAD( CMN_in(pt_t* pt) )
 		case FR_LED_OPEN:	// orange led
 			switch (CMN.fr.argv[1]) {
 			case FR_LED_SET:	// set
-				CMN.orange_led_period = CMN.fr.argv[2] * 10 * TIME_1_MSEC;
+				CMN.orange_led.lo = CMN.fr.argv[2];
+				CMN.orange_led.hi = CMN.fr.argv[3];
 				break;
 
 			case FR_LED_GET:	// get
-				CMN.fr.argv[2] = CMN.orange_led_period / (10 * TIME_1_MSEC);
+				CMN.fr.argv[2] = CMN.orange_led.lo;
+				CMN.fr.argv[3] = CMN.orange_led.hi;
 				break;
 
 			default:
@@ -267,8 +245,6 @@ static PT_THREAD( CMN_in(pt_t* pt) )
 
 static PT_THREAD( CMN_blink(pt_t* pt) )
 {
-	blink_t b;
-
 	PT_BEGIN(pt);
 
 	PT_WAIT_UNTIL(pt, TIME_get() >= CMN.time);
@@ -277,20 +253,42 @@ static PT_THREAD( CMN_blink(pt_t* pt) )
 	CMN.time += 10 * TIME_1_MSEC;
 
 	// blink green led
-	b.led = GREEN_LED;
-	b.pseudo_period = CMN.green_led_period;
-	b.top = GREEN_TOP;
-	b.bottom = GREEN_BOTTOM;
-	blink_led(&b);
-	PT_YIELD(pt);
+	CMN.green_led.cnt++;
+
+	// green led ON ?
+	if ( LED_PORT & GREEN_LED ) {
+		// led ON for its hi duration ?
+		if ( CMN.green_led.cnt >= CMN.green_led.hi ) {
+			// turn it off
+			LED_PORT &= ~GREEN_LED;
+		}
+	}
+	else {
+		// led off for its lo duration ?
+		if ( CMN.green_led.cnt >= CMN.green_led.lo ) {
+			// turn it ON
+			LED_PORT |= GREEN_LED;
+		}
+	}
 
 	// blink orange led
-	b.led = ORANGE_LED;
-	b.pseudo_period = CMN.orange_led_period;
-	b.top = ORANGE_TOP;
-	b.bottom = ORANGE_BOTTOM;
-	blink_led(&b);
-	PT_YIELD(pt);
+	CMN.orange_led.cnt++;
+
+	// orange led ON ?
+	if ( LED_PORT & ORANGE_LED ) {
+		// led ON for its hi duration ?
+		if ( CMN.orange_led.cnt >= CMN.orange_led.hi ) {
+			// turn it off
+			LED_PORT &= ~ORANGE_LED;
+		}
+	}
+	else {
+		// led off for its lo duration ?
+		if ( CMN.orange_led.cnt >= CMN.orange_led.lo ) {
+			// turn it ON
+			LED_PORT |= ORANGE_LED;
+		}
+	}
 
 	PT_RESTART(pt);
 
@@ -316,8 +314,9 @@ void CMN_init(void)
 
 	// variables init
 	CMN.state = READY;
-	CMN.green_led_period = TIME_MAX;
-	CMN.orange_led_period = TIME_MAX;
+	struct led_t zero = {0, 0, 0};
+	CMN.green_led = zero;
+	CMN.orange_led = zero;
 	CMN.time = 0;
 
 	// register own call-back for specific commands
