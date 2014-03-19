@@ -23,14 +23,13 @@
 
 #include "dispatcher.h"
 
-#include "drivers/twi.h"
-
 #include "utils/pt.h"		// PT_*
 #include "utils/pt_sem.h"	// PT_SEM_*
 #include "utils/time.h"		// TIME_*
 #include "utils/fifo.h"		// FIFO_*
 
 #include <string.h>
+#include <stdlib.h>
 
 //--------------------------------------
 // private defines
@@ -84,7 +83,7 @@ static struct {
 // this protothread purpose is to scan the I2C bus
 // to find a free address
 // DNA.tmp is used to store the scanned I2C address
-static PT_THREAD( DNA_scan_free(pt_t* pt) )
+static PT_THREAD( DNA_scan_free(pt_t* pt, u8 is_bc) )
 {
 	frame_t fr;
 
@@ -95,14 +94,19 @@ static PT_THREAD( DNA_scan_free(pt_t* pt) )
 
 	// scan all the IS address range
 	while (1) {
-		// reserve the I2C address
-		TWI_set_sl_addr(DNA.tmp);
-
 		// send a frame to test if the I2C address is free
 		DNA.out.orig = 0;
 		DNA.out.dest = DNA.tmp;
 		DNA.out.status = 0;
 		DNA.out.cmde = FR_I2C_READ;
+
+		// if not BC
+		if (!is_bc) {
+			// wait a random time to let BC start and avoid collision between IS
+			DNA.time = (rand() % 100) * TIME_1_MSEC + TIME_get();
+
+			PT_WAIT_UNTIL(pt, TIME_get() > DNA.time);
+		}
 
 		// then send frame
 		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
@@ -554,12 +558,11 @@ u8 DNA_run(void)
 {
 	PT_BEGIN(&DNA.pt);
 
-	// scan for a free I2C address
-	DNA.tmp = DNA_I2C_ADDR_MIN;
-	PT_SPAWN(&DNA.pt, &DNA.pt2, DNA_scan_free(&DNA.pt2));
-
 	// when acting as a BC
 	if ( DNA_SELF_TYPE(DNA.list) == DNA_BC ) {
+		// scan for a free I2C address
+		PT_SPAWN(&DNA.pt, &DNA.pt2, DNA_scan_free(&DNA.pt2, 1));
+
 		// find every BS
 		//PT_SPAWN(&DNA.pt, &DNA.pt2, DNA_scan_bs(&DNA.pt2));
 
@@ -581,6 +584,9 @@ u8 DNA_run(void)
 	}
 	// else acting as an IS
 	else {
+		// scan for a free I2C address
+		PT_SPAWN(&DNA.pt, &DNA.pt2, DNA_scan_free(&DNA.pt2, 0));
+
 		// reset retries counter
 		DNA.tmp = 0;
 
