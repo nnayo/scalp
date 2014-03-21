@@ -173,6 +173,7 @@ static PT_THREAD( DPT_appli(pt_t* pt) )
 		}
 
 		// and finally goes to distant node
+		fr.orig = DPT.sl_addr;
 		FIFO_put(&DPT.out_fifo, &fr);
 	}
 
