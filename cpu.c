@@ -45,7 +45,8 @@ static struct {
 	u32 time;					// stats update time-out
 	cpu_t stat;
 
-	u8 index:1;
+	u8 save_idx:1;
+	u8 send_idx:1;
 	cpu_t hist[NB_HIST];
 	u16 min;
 	u16 max;
@@ -69,8 +70,8 @@ void CPU_stats(void)
 		CPU.time += TIME_1_SEC;
 
 		// save last loop count
-		CPU.hist[CPU.index] = CPU.stat;
-		CPU.index++;
+		CPU.hist[CPU.save_idx] = CPU.stat;
+		CPU.save_idx++;
 
 		// update stats
 		if (CPU.stat.cnt > CPU.max)
@@ -92,20 +93,17 @@ void CPU_stats(void)
 
 static PT_THREAD(CPU_com(pt_t* pt))
 {
-	u8 index;
-
 	PT_BEGIN(pt);
 
-	// every 2 seconds (with an offset of 1s)
-	PT_WAIT_UNTIL(pt, CPU.index == 0);
+	// every 1 second (when indexes are different)
+	PT_WAIT_UNTIL(pt, CPU.save_idx != CPU.send_idx);
 
 	// send the stats
 	CPU.fr.dest = DPT_BROADCAST_ADDR;
 	CPU.fr.orig = DPT_SELF_ADDR;
 	CPU.fr.cmde = FR_CPU;
-	index = (CPU.index - 1) % NB_HIST;
-	CPU.fr.argv[0] = (CPU.hist[index].cnt >> 8) & 0x00ff;
-	CPU.fr.argv[1] = (CPU.hist[index].cnt >> 0) & 0x00ff;
+	CPU.fr.argv[0] = (CPU.hist[CPU.send_idx].cnt >> 8) & 0x00ff;
+	CPU.fr.argv[1] = (CPU.hist[CPU.send_idx].cnt >> 0) & 0x00ff;
 	CPU.fr.argv[2] = (CPU.max >> 8) & 0x00ff;
 	CPU.fr.argv[3] = (CPU.max >> 0) & 0x00ff;
 	CPU.fr.argv[4] = (CPU.min >> 8) & 0x00ff;
@@ -115,6 +113,8 @@ static PT_THREAD(CPU_com(pt_t* pt))
 	DPT_lock(&CPU.interf);
 	PT_WAIT_UNTIL(pt, DPT_tx(&CPU.interf, &CPU.fr));
 	DPT_unlock(&CPU.interf);
+
+	CPU.send_idx = CPU.save_idx;
 
 	// loop back for next frame
 	PT_RESTART(pt);
@@ -140,7 +140,8 @@ void CPU_init(void)
 		CPU.hist[i].cnt = 0;
 		CPU.hist[i].slp = 0;
 	}
-	CPU.index = 0;
+	CPU.save_idx = 0;
+	CPU.send_idx = 0;
 	CPU.max = 0;
 	CPU.min = 0xffff;
 
