@@ -10,6 +10,7 @@ typedef enum {
 	DNA_BS,		// Basic Slave
 	DNA_MINUT,	// minuterie node
 	DNA_XP,		// experience node
+	DNA_ST,		// storage node
 } dna_t;
 
 #endif	// __DNA_LIST_H__
