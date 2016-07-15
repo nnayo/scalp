@@ -1,0 +1,8 @@
+# python files
+*.pyc
+
+# vim backup files
+*~
+
+# C object
+*.o
