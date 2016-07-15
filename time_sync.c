@@ -88,15 +88,12 @@ static PT_THREAD( TSN_tsn(pt_t* pt) )
 	TSN.fr.serial = 0;
 
 	// send the time request
-	DPT_lock(&TSN.interf);
-	PT_WAIT_UNTIL(pt, OK == DPT_tx(&TSN.interf, &TSN.fr));
-	DPT_unlock(&TSN.interf);
+	dpt_lock(&TSN.interf);
+	PT_WAIT_UNTIL(pt, OK == dpt_tx(&TSN.interf, &TSN.fr));
+	dpt_unlock(&TSN.interf);
 
 	// wait for the answer
 	PT_WAIT_UNTIL(pt, FIFO_get(&TSN.queue, &TSN.fr) && TSN.fr.resp);
-
-	// immediatly unlock
-	DPT_unlock(&TSN.interf);
 
 	// rebuild remote time (AVR is little endian)
 	remote_time.part[0] = TSN.fr.argv[3];
@@ -150,7 +147,7 @@ void TSN_init(void)
 	TSN.interf.channel = 8;
 	TSN.interf.cmde_mask = _CM(FR_TIME_GET);
 	TSN.interf.queue = &TSN.queue;
-	DPT_register(&TSN.interf);
+	dpt_register(&TSN.interf);
 }
 
 

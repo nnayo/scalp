@@ -110,9 +110,9 @@ static PT_THREAD(CPU_com(pt_t* pt))
 	CPU.fr.argv[5] = (CPU.min >> 0) & 0x00ff;
 
 	// send the response
-	DPT_lock(&CPU.interf);
-	PT_WAIT_UNTIL(pt, DPT_tx(&CPU.interf, &CPU.fr));
-	DPT_unlock(&CPU.interf);
+	dpt_lock(&CPU.interf);
+	PT_WAIT_UNTIL(pt, dpt_tx(&CPU.interf, &CPU.fr));
+	dpt_unlock(&CPU.interf);
 
 	CPU.send_idx = CPU.save_idx;
 
@@ -157,7 +157,7 @@ void CPU_init(void)
 	CPU.interf.channel = 10;
 	CPU.interf.queue = NULL;
 	CPU.interf.cmde_mask = 0;
-	DPT_register(&CPU.interf);
+	dpt_register(&CPU.interf);
 
 	PT_INIT(&CPU.pt);
 }

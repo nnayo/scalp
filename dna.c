@@ -109,7 +109,7 @@ static PT_THREAD( DNA_scan_free(pt_t* pt, u8 is_bc) )
 		}
 
 		// then send frame
-		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
+		PT_WAIT_UNTIL(pt, dpt_tx(&DNA.interf, &DNA.out) == OK);
 
 		// wait for the matching response evicting the others
 		PT_WAIT_UNTIL(pt, (OK == FIFO_get(&DNA.in_fifo, &fr)) && (fr.t_id == DNA.out.t_id) );
@@ -120,7 +120,7 @@ static PT_THREAD( DNA_scan_free(pt_t* pt, u8 is_bc) )
 
 			// the initial phase is finished
 			// bring the node to partial capability
-			DPT_set_sl_addr(DNA.tmp);
+			dpt_set_sl_addr(DNA.tmp);
 			PT_EXIT(pt);
 		}
 
@@ -162,7 +162,7 @@ static PT_THREAD( DNA_scan_bs(pt_t* pt) )
 		DNA.out.cmde = FR_I2C_READ;
 
 		// then send frame
-		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
+		PT_WAIT_UNTIL(pt, dpt_tx(&DNA.interf, &DNA.out) == OK);
 
 		// wait for the matching response evicting the others
 		PT_WAIT_UNTIL(pt, (OK == FIFO_get(&DNA.in_fifo, &fr)) && (fr.t_id == DNA.out.t_id) );
@@ -236,7 +236,7 @@ static PT_THREAD( DNA_list_updater(pt_t* pt) )
 		DNA.out.argv[2] = DNA.list[DNA.index].i2c_addr;
 
 		// send the frame
-		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
+		PT_WAIT_UNTIL(pt, dpt_tx(&DNA.interf, &DNA.out) == OK);
 	}
 
 	if ( DNA.index == DNA_LIST_SIZE) {
@@ -248,10 +248,10 @@ static PT_THREAD( DNA_list_updater(pt_t* pt) )
 		DNA.out.argv[2] = 0x00;
 
 		// send the frame
-		PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
+		PT_WAIT_UNTIL(pt, dpt_tx(&DNA.interf, &DNA.out) == OK);
 
 		// then unlock the channel
-		DPT_unlock(&DNA.interf);
+		dpt_unlock(&DNA.interf);
 	}
 
 	// loop back
@@ -273,7 +273,7 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 	// if frame is a response
 	if ( fr.resp ) {
 		// unlock the channel
-		DPT_unlock(&DNA.interf);
+		dpt_unlock(&DNA.interf);
 
 		// ignore it and wait next frame
 		PT_RESTART(pt);
@@ -308,7 +308,7 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 				DNA.list[DNA_BC + DNA.nb_is].type = fr.argv[1];
 
 				// and send back the REGISTER response
-				PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
+				PT_WAIT_UNTIL(pt, dpt_tx(&DNA.interf, &DNA.out) == OK);
 
 				// prepare to send the new list to every node
 				// list sending will start by the BC line
@@ -324,7 +324,7 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 			DNA.out.argv[1] = DNA.nb_bs;
 
 			// then send it
-			PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
+			PT_WAIT_UNTIL(pt, dpt_tx(&DNA.interf, &DNA.out) == OK);
 			break;
 
 		case FR_DNA_LINE:
@@ -335,7 +335,7 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 			DNA.out.argv[2] = DNA.list[fr.argv[0]].i2c_addr;
 
 			// then send it
-			PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK);
+			PT_WAIT_UNTIL(pt, dpt_tx(&DNA.interf, &DNA.out) == OK);
 			break;
 
 		default:
@@ -346,7 +346,7 @@ static PT_THREAD( DNA_bc_frame(pt_t* pt) )
 	// if list updating isn't running
 	if ( DNA.index >= DNA_LIST_SIZE ) {
 		// finally, unlock the channel
-		DPT_unlock(&DNA.interf);
+		dpt_unlock(&DNA.interf);
 	}
 
 	// loop back
@@ -392,7 +392,7 @@ static PT_THREAD( DNA_is_reg_wait(pt_t* pt, u8* ret) )
 		DNA.list[DNA_BC].i2c_addr = fr.orig;
 
 		// allow general calls
-		DPT_gen_call(OK);
+		dpt_gen_call(OK);
 
 		// init is finished
 		PT_EXIT(pt);
@@ -423,7 +423,7 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 	DNA.out.cmde = FR_DNA_REGISTER;
 	DNA.out.argv[0] = DNA_SELF_ADDR(DNA.list);
 	DNA.out.argv[1] = DNA_SELF_TYPE(DNA.list);
-	PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK );
+	PT_WAIT_UNTIL(pt, dpt_tx(&DNA.interf, &DNA.out) == OK );
 
 	// wait for the time-out or the reception of the response
 	PT_SPAWN(pt, &DNA.pt3, DNA_is_reg_wait(&DNA.pt3, &ret));
@@ -442,7 +442,7 @@ static PT_THREAD( DNA_is_reg(pt_t* pt) )
 			DNA.out.status = 0;
 			DNA.out.argv[0] = 0x00;	// set
 			DNA.out.argv[1] = 0x02;	// NONE
-			PT_WAIT_UNTIL(pt, DPT_tx(&DNA.interf, &DNA.out) == OK );
+			PT_WAIT_UNTIL(pt, dpt_tx(&DNA.interf, &DNA.out) == OK );
 
 			// give up registering
 			PT_EXIT(pt);
@@ -467,7 +467,7 @@ static PT_THREAD( DNA_is(pt_t* pt) )
 	PT_WAIT_UNTIL(pt, OK == FIFO_get(&DNA.in_fifo, &fr));
 
 	// immediatly release the channel
-	DPT_unlock(&DNA.interf);
+	dpt_unlock(&DNA.interf);
 
 	// if frame is a response
 	if ( fr.resp ) {
@@ -533,13 +533,13 @@ void DNA_init(dna_t mode)
 	DNA.interf.channel = 2;
 	DNA.interf.cmde_mask = _CM(FR_DNA_REGISTER) | _CM(FR_DNA_LIST) | _CM(FR_DNA_LINE) | _CM(FR_I2C_WRITE) | _CM(FR_I2C_READ);
 	DNA.interf.queue = &DNA.in_fifo;
-	DPT_register(&DNA.interf);
+	dpt_register(&DNA.interf);
 
 	// the channel will be locked
 	// until the end of the scannings
 	// or
 	// until the IS is registered
-	DPT_lock(&DNA.interf);
+	dpt_lock(&DNA.interf);
 }
 
 
@@ -567,14 +567,14 @@ u8 DNA_run(void)
 		//PT_SPAWN(&DNA.pt, &DNA.pt2, DNA_scan_bs(&DNA.pt2));
 
 		// scannings are finished, so release the channel
-		DPT_unlock(&DNA.interf);
+		dpt_unlock(&DNA.interf);
 
 		// save BC info in registered node list
 		DNA_BC_ADDR(DNA.list) = DNA_SELF_ADDR(DNA.list);
 		DNA.list[DNA_BC].type = DNA_BC;
 
 		// accept general calls to allow the IS to register
-		DPT_gen_call(OK);
+		dpt_gen_call(OK);
 
 		// BC behaviour handling
 		PT_INIT(&DNA.pt2);
@@ -594,7 +594,7 @@ u8 DNA_run(void)
 		PT_SPAWN(&DNA.pt, &DNA.pt2, DNA_is_reg(&DNA.pt2));
 
 		// whenever IS is registered or not, release the channel
-		DPT_unlock(&DNA.interf);
+		dpt_unlock(&DNA.interf);
 
 		// IS behaviour handling
 		PT_SPAWN(&DNA.pt, &DNA.pt2, DNA_is(&DNA.pt2));

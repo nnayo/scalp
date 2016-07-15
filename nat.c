@@ -105,7 +105,7 @@ static PT_THREAD( NAT_twi_in(pt_t* pt) )
 
 	// wait for a frame
 	PT_WAIT_UNTIL(pt, FIFO_get(&NAT.twi_in_fifo, &NAT.twi_in));
-	DPT_unlock(&NAT.interf);
+	dpt_unlock(&NAT.interf);
 
 #ifdef NAT_ENABLE_ETH
 	// if the frame is for eth link
@@ -147,9 +147,8 @@ static PT_THREAD( NAT_twi_out(pt_t* pt) )
 	PT_WAIT_UNTIL(pt, FIFO_get(&NAT.twi_out_fifo, &NAT.twi_out));
 
 	// send it via the dispatcher
-	DPT_lock(&NAT.interf);
-	PT_WAIT_UNTIL(pt, DPT_tx(&NAT.interf, &NAT.twi_out));
-	DPT_unlock(&NAT.interf);
+	PT_WAIT_UNTIL(pt, (dpt_lock(&NAT.interf), dpt_tx(&NAT.interf, &NAT.twi_out)));
+	dpt_unlock(&NAT.interf);
 
 	// loop back for processing next frame
 	PT_RESTART(pt);
@@ -340,7 +339,7 @@ void NAT_init(void)
 	NAT.interf.channel = 5;
 	NAT.interf.cmde_mask = -1;	// accept all commands
 	NAT.interf.queue = &NAT.twi_in_fifo;
-	DPT_register(&NAT.interf);
+	dpt_register(&NAT.interf);
 
 	PT_INIT(&NAT.twi_out_pt);
 	FIFO_init(&NAT.twi_out_fifo, &NAT.twi_out_buf, QUEUE_SIZE, sizeof(NAT.twi_out_buf[0]));

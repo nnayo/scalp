@@ -78,30 +78,30 @@
 //
 
 static struct {
-	dpt_interface_t* channels[DPT_CHAN_NB];	// available channels
-	u64 lock;								// lock bitfield
+        dpt_interface_t* channels[DPT_CHAN_NB];	// available channels
+        u64 lock;				// lock bitfield
 
-	pt_t appli_pt;							// appli thread
-	fifo_t appli_fifo;
-	frame_t appli_buf[NB_APPLI_FRAMES];
-	frame_t appli;
+        pt_t appli_pt;				// appli thread
+        fifo_t appli_fifo;
+        frame_t appli_buf[NB_APPLI_FRAMES];
+        frame_t appli;
 
-	pt_t in_pt;								// in thread
-	fifo_t in_fifo;
-	frame_t in_buf[NB_IN_FRAMES];
-	frame_t in;	
+        pt_t in_pt;				// in thread
+        fifo_t in_fifo;
+        frame_t in_buf[NB_IN_FRAMES];
+        frame_t in;
 
-	pt_t out_pt;							// out thread
-	fifo_t out_fifo;
-	frame_t out_buf[NB_OUT_FRAMES];
-	frame_t out;
-	frame_t hard;
-	volatile u8 hard_fini;
+        pt_t out_pt;				// out thread
+        fifo_t out_fifo;
+        frame_t out_buf[NB_OUT_FRAMES];
+        frame_t out;
+        frame_t hard;
+        volatile u8 hard_fini;
 
-	u8 sl_addr;								// own I2C slave address
-	u32 time_out;							// tx time-out time
-	u8 t_id;								// current transaction id value
-} DPT;
+        u8 sl_addr;				// own I2C slave address
+        u32 time_out;				// tx time-out time
+        u8 t_id;				// current transaction id value
+} dpt;
 
 
 //----------------------------------------
@@ -109,282 +109,283 @@ static struct {
 //
 
 // dispatch the frame to each registered listener
-static void DPT_dispatch(frame_t* fr)
+static void dpt_dispatch(frame_t* fr)
 {
-	u8 i;
-	fr_cmdes_t cmde = fr->cmde;
+        u8 i;
+        fr_cmdes_t cmde = fr->cmde;
 
-	// for each registered commands ranges
-	for (i = 0; i < DPT_CHAN_NB; i++) {
-		// if channel is not registered
-		if ( DPT.channels[i] == NULL )
-			// skip to following
-			continue;
+        // for each registered commands ranges
+        for (i = 0; i < DPT_CHAN_NB; i++) {
+                // if channel is not registered
+                if ( dpt.channels[i] == NULL )
+                        // skip to following
+                        continue;
 
-		// if command is in a range
-		if ( DPT.channels[i]->cmde_mask & _CM(cmde) ) {
-			// enqueue it if a queue is available
-			if ( DPT.channels[i]->queue && (OK == FIFO_put(DPT.channels[i]->queue, fr)) ) {
-				// if a success, lock the channel
-				DPT.lock |= 1 << i;
-			}
-		}
-	}
+                // if command is in a range
+                // and if a queue is available
+                if (dpt.channels[i]->cmde_mask & _CM(cmde) && dpt.channels[i]->queue)
+                        // enqueue it
+                        FIFO_put(dpt.channels[i]->queue, fr);
+                //		// if command is in a range
+                //		if (dpt.channels[i]->cmde_mask & _CM(cmde))
+                //			// enqueue it if a queue is available
+                //			if (dpt.channels[i]->queue && (OK == FIFO_put(dpt.channels[i]->queue, fr)))
+                //				// if a success, lock the channel
+                //				dpt.lock |= 1 << i;
+        }
 }
 
 
-static PT_THREAD( DPT_appli(pt_t* pt) )
+static PT_THREAD( dpt_appli(pt_t* pt) )
 {
-	frame_t fr;
-	u8 routes[MAX_ROUTES];
-	u8 nb_routes;
-	u8 i;
+        frame_t fr;
+        u8 routes[MAX_ROUTES];
+        u8 nb_routes;
+        u8 i;
 
-	PT_BEGIN(pt);
+        PT_BEGIN(pt);
 
-	// if any awaiting incoming frames
-	PT_WAIT_UNTIL(pt, FIFO_get(&DPT.appli_fifo, &fr));
+        // if any awaiting incoming frames
+        PT_WAIT_UNTIL(pt, FIFO_get(&dpt.appli_fifo, &fr));
 
-	// route the frame
-	ROUT_route(fr.dest, routes, &nb_routes);
+        // route the frame
+        ROUT_route(fr.dest, routes, &nb_routes);
 
-	// no route
-	if ( nb_routes == 0 ) {
-		// so we will send it unmodify
-		// but tweecking the resulting route
-		nb_routes = 1;
-		routes[0] = fr.dest;
-	}
+        // no route
+        if (nb_routes == 0) {
+                // so we will send it unmodify
+                // but tweecking the resulting route
+                nb_routes = 1;
+                routes[0] = fr.dest;
+        }
 
-	for ( i = 0; i < nb_routes; i++ ) {
-		fr.dest = routes[i];
-		// if the frame destination is only local
-		if ( (fr.dest == DPT_SELF_ADDR) || (fr.dest == DPT.sl_addr) ) {
-			FIFO_put(&DPT.in_fifo, &fr);
+        for (i = 0; i < nb_routes; i++) {
+                fr.dest = routes[i];
+                // if the frame destination is only local
+                if ((fr.dest == DPT_SELF_ADDR) || (fr.dest == dpt.sl_addr)) {
+                        FIFO_put(&dpt.in_fifo, &fr);
 
-			// short cut the handling to speed up
-			break;
-		}
+                        // short cut the handling to speed up
+                        break;
+                }
 
-		// if broadcasting
-		if (fr.dest == DPT_BROADCAST_ADDR) {
-			// also goes to local node
-			FIFO_put(&DPT.in_fifo, &fr);
-		}
+                // if broadcasting
+                if (fr.dest == DPT_BROADCAST_ADDR) {
+                        // also goes to local node
+                        FIFO_put(&dpt.in_fifo, &fr);
+                }
 
-		// and finally goes to distant node
-		fr.orig = DPT.sl_addr;
-		FIFO_put(&DPT.out_fifo, &fr);
-	}
+                // and finally goes to distant node
+                fr.orig = dpt.sl_addr;
+                FIFO_put(&dpt.out_fifo, &fr);
+        }
 
-	// so loop back for the next frame
-	PT_RESTART(pt);
+        // so loop back for the next frame
+        PT_RESTART(pt);
 
-	PT_END(pt);
+        PT_END(pt);
 }
 
 
-static PT_THREAD( DPT_in(pt_t* pt) )
+static PT_THREAD( dpt_in(pt_t* pt) )
 {
-	frame_t fr;
+        frame_t fr;
 
-	PT_BEGIN(pt);
+        PT_BEGIN(pt);
 
-	// if any awaiting incoming frames
-	PT_WAIT_UNTIL(pt, FIFO_get(&DPT.in_fifo, &fr));
+        // if any awaiting incoming frames
+        PT_WAIT_UNTIL(pt, FIFO_get(&dpt.in_fifo, &fr));
 
-	// dispatch the frame
-	DPT_dispatch(&fr);
+        // dispatch the frame
+        dpt_dispatch(&fr);
 
-	// the frame has been sent to its destination
-	// so loop back for the next frame
-	PT_RESTART(pt);
+        // the frame has been sent to its destination
+        // so loop back for the next frame
+        PT_RESTART(pt);
 
-	PT_END(pt);
+        PT_END(pt);
 }
 
 
-static PT_THREAD( DPT_out(pt_t* pt) )
+static PT_THREAD( dpt_out(pt_t* pt) )
 {
-	u8 twi_res;
+        u8 twi_res;
 
-	PT_BEGIN(pt);
+        PT_BEGIN(pt);
 
-	// if no twi transfer running
-	if ( DPT.hard_fini == OK ) {
-		// read any available frame
-		PT_WAIT_UNTIL(pt, FIFO_get(&DPT.out_fifo, &DPT.hard));
+        // if no twi transfer running
+        if (dpt.hard_fini == OK) {
+                // read any available frame
+                PT_WAIT_UNTIL(pt, FIFO_get(&dpt.out_fifo, &dpt.hard));
 
-		// compute and save time-out limit
-		// byte transmission is typically 100 us
-		DPT.time_out = TIME_get() + TIME_1_MSEC * sizeof(frame_t);
+                // compute and save time-out limit
+                // byte transmission is typically 100 us
+                dpt.time_out = TIME_get() + TIME_1_MSEC * sizeof(frame_t);
 
-		// now a twi transfer shall begin
-		DPT.hard_fini = KO;
-	}
+                // now a twi transfer shall begin
+                dpt.hard_fini = KO;
+        }
 
-	// read from and write to an I2C component are handled specificly
-	// the frame characteristics to correctly complete the fields of the response
-	// in case of I2C read or write are taken from the DPT.hard frame
-	switch ( DPT.hard.cmde ) {
-		case FR_I2C_READ:
-			twi_res = TWI_ms_rx(DPT.hard.dest, DPT.hard.len, (u8*)&DPT.hard + FRAME_ARGV_OFFSET);
-			break;
+        // read from and write to an I2C component are handled specificly
+        // the frame characteristics to correctly complete the fields of the response
+        // in case of I2C read or write are taken from the dpt.hard frame
+        switch (dpt.hard.cmde) {
+        case FR_I2C_READ:
+                twi_res = TWI_ms_rx(dpt.hard.dest, dpt.hard.len, (u8*)&dpt.hard + FRAME_ARGV_OFFSET);
+                break;
 
-		case FR_I2C_WRITE:
-			twi_res = TWI_ms_tx(DPT.hard.dest, DPT.hard.len, (u8*)&DPT.hard + FRAME_ARGV_OFFSET);
-			break;
+        case FR_I2C_WRITE:
+                twi_res = TWI_ms_tx(dpt.hard.dest, dpt.hard.len, (u8*)&dpt.hard + FRAME_ARGV_OFFSET);
+                break;
 
-		default:
-			twi_res = TWI_ms_tx(DPT.hard.dest, sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&DPT.hard + FRAME_ORIG_OFFSET);
-			break;
-	}
+        default:
+                twi_res = TWI_ms_tx(dpt.hard.dest, sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&dpt.hard + FRAME_ORIG_OFFSET);
+                break;
+        }
 
-	// if the TWI is not able to sent the frame
-	if ( twi_res == KO ) {
-		// prevent time-out signalling
-		DPT.time_out = TIME_MAX;
+        // if the TWI is not able to sent the frame
+        if (twi_res == KO) {
+                // prevent time-out signalling
+                dpt.time_out = TIME_MAX;
 
-		// retry sending the frame
-		PT_RESTART(pt);
-	}
+                // retry sending the frame
+                PT_RESTART(pt);
+        }
 
-	// wait until the twi transfer is done
-	PT_WAIT_UNTIL(pt, DPT.hard_fini != OK);
+        // wait until the twi transfer is done
+        PT_WAIT_UNTIL(pt, dpt.hard_fini != OK);
 
-	// and loop back for another transfer
-	PT_RESTART(pt);
+        // and loop back for another transfer
+        PT_RESTART(pt);
 
-	PT_END(pt);
+        PT_END(pt);
 }
 
 
 // I2C reception call-back
-static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
+static void dpt_i2c_call_back(twi_state_t state, u8 nb_data, void* misc)
 {
-	(void)misc;
+        (void)misc;
 
-	// reset tx time-out because the driver is signalling an event
-	DPT.time_out = TIME_MAX;
+        // reset tx time-out because the driver is signalling an event
+        dpt.time_out = TIME_MAX;
 
-	// upon the state
-	switch ( state ) {
-		case TWI_NO_SL:
-			// if the slave doesn't respond
-			// whether the I2C address is free, so take it
-			// or the slave has crached
-			// whatever the problem, put a failed resp in rx frame
-			// as the comm was locally initiated
-			// all the fields are those of DPT.hard frame
-			DPT.hard.orig = DPT.hard.dest;
-			DPT.hard.dest = DPT.sl_addr;
-			DPT.hard.resp = 1;
-			DPT.hard.error = 1;
+        // upon the state
+        switch (state) {
+        case TWI_NO_SL:
+                // if the slave doesn't respond
+                // whether the I2C address is free, so take it
+                // or the slave has crached
+                // whatever the problem, put a failed resp in rx frame
+                // as the comm was locally initiated
+                // all the fields are those of dpt.hard frame
+                dpt.hard.orig = dpt.hard.dest;
+                dpt.hard.dest = dpt.sl_addr;
+                dpt.hard.resp = 1;
+                dpt.hard.error = 1;
 
-			// enqueue the response
-			FIFO_put(&DPT.in_fifo, &DPT.hard);
+                // enqueue the response
+                FIFO_put(&dpt.in_fifo, &dpt.hard);
 
-			// and stop the com
-			TWI_stop();
-			DPT.hard_fini = OK;
+                // and stop the com
+                TWI_stop();
+                dpt.hard_fini = OK;
 
-			break;
+                break;
 
-		case TWI_MS_RX_END:
-			// reading data ends
-		case TWI_MS_TX_END:
-			// writing data ends
+        case TWI_MS_RX_END:
+                // reading data ends
+        case TWI_MS_TX_END:
+                // writing data ends
 
-			// simple I2C actions are directly handled
-			// communications with other nodes will received a response later
-			if ( (DPT.hard.cmde == FR_I2C_READ) || (DPT.hard.cmde == FR_I2C_WRITE) ) {
-				// update header
-				DPT.hard.orig = DPT.hard.dest;
-				DPT.hard.dest = DPT_SELF_ADDR;
-				DPT.hard.resp = 1;
-				DPT.hard.error = 0;
+                // simple I2C actions are directly handled
+                // communications with other nodes will received a response later
+                if ((dpt.hard.cmde == FR_I2C_READ) || (dpt.hard.cmde == FR_I2C_WRITE)) {
+                        // update header
+                        dpt.hard.orig = dpt.hard.dest;
+                        dpt.hard.dest = DPT_SELF_ADDR;
+                        dpt.hard.resp = 1;
+                        dpt.hard.error = 0;
 
-				// enqueue the response
-				FIFO_put(&DPT.in_fifo, &DPT.hard);
-			}
+                        // enqueue the response
+                        FIFO_put(&dpt.in_fifo, &dpt.hard);
+                }
 
-			// and stop the com
-			TWI_stop();
-			DPT.hard_fini = OK;
+                // and stop the com
+                TWI_stop();
+                dpt.hard_fini = OK;
 
-			break;
+                break;
 
-		case TWI_SL_RX_BEGIN:
-			// just provide a buffer to store the incoming frame
-			// only the origin, the cmde/resp and the arguments are received
-			DPT.hard_fini = KO;
-			DPT.hard.dest = DPT.sl_addr;
-			TWI_sl_rx(sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&DPT.hard + FRAME_ORIG_OFFSET);
+        case TWI_SL_RX_BEGIN:
+                // just provide a buffer to store the incoming frame
+                // only the origin, the cmde/resp and the arguments are received
+                dpt.hard_fini = KO;
+                dpt.hard.dest = dpt.sl_addr;
+                TWI_sl_rx(sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&dpt.hard + FRAME_ORIG_OFFSET);
 
-			break;
+                break;
 
-		case TWI_SL_RX_END:
-			// if the msg len is correct
-			if ( nb_data == (sizeof(frame_t) - FRAME_ORIG_OFFSET)) {
-				// enqueue the response
-				FIFO_put(&DPT.in_fifo, &DPT.hard);
-			}
-			// else it is ignored
+        case TWI_SL_RX_END:
+                // if the msg len is correct
+                if (nb_data == (sizeof(frame_t) - FRAME_ORIG_OFFSET))
+                        // enqueue the response
+                        FIFO_put(&dpt.in_fifo, &dpt.hard);
+                // else it is ignored
 
-			// release the bus
-			TWI_stop();
-			DPT.hard_fini = OK;
+                // release the bus
+                TWI_stop();
+                dpt.hard_fini = OK;
 
-			break;
+                break;
 
-		case TWI_SL_TX_BEGIN:
-			// don't want to send a single byte
-			TWI_sl_tx(0, NULL);
+        case TWI_SL_TX_BEGIN:
+                // don't want to send a single byte
+                TWI_sl_tx(0, NULL);
 
-			break;
+                break;
 
-		case TWI_SL_TX_END:
-			// the bus will be released by hardware
-			break;
+        case TWI_SL_TX_END:
+                // the bus will be released by hardware
+                break;
 
-		case TWI_GENCALL_BEGIN:
-			// just provide a buffer to store the incoming frame
-			// only the origin, the cmde/resp and the arguments are received
-			DPT.hard_fini = KO;
-			DPT.hard.dest = DPT.sl_addr;
-			TWI_sl_rx(sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&DPT.hard + FRAME_ORIG_OFFSET);
+        case TWI_GENCALL_BEGIN:
+                // just provide a buffer to store the incoming frame
+                // only the origin, the cmde/resp and the arguments are received
+                dpt.hard_fini = KO;
+                dpt.hard.dest = dpt.sl_addr;
+                TWI_sl_rx(sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&dpt.hard + FRAME_ORIG_OFFSET);
 
-			break;
+                break;
 
-		case TWI_GENCALL_END:
-			// if the msg len is correct
-			if ( nb_data == (sizeof(frame_t) - FRAME_ORIG_OFFSET)) {
-				// enqueue the incoming frame
-				FIFO_put(&DPT.in_fifo, &DPT.hard);
-			}
-			// else it is ignored
+        case TWI_GENCALL_END:
+                // if the msg len is correct
+                if (nb_data == (sizeof(frame_t) - FRAME_ORIG_OFFSET))
+                        // enqueue the incoming frame
+                        FIFO_put(&dpt.in_fifo, &dpt.hard);
+                // else it is ignored
 
-			// release the bus
-			TWI_stop();
-			DPT.hard_fini = OK;
+                // release the bus
+                TWI_stop();
+                dpt.hard_fini = OK;
 
-			break;
+                break;
 
-		default:
-			// error or time-out state
-			DPT.hard.dest = DPT.sl_addr;
-			DPT.hard.resp = 1;
-			DPT.hard.time_out = 1;
+        default:
+                // error or time-out state
+                dpt.hard.dest = dpt.sl_addr;
+                dpt.hard.resp = 1;
+                dpt.hard.time_out = 1;
 
-			// enqueue the response
-			FIFO_put(&DPT.in_fifo, &DPT.hard);
+                // enqueue the response
+                FIFO_put(&dpt.in_fifo, &dpt.hard);
 
-			// and then release the bus
-			TWI_stop();
-			DPT.hard_fini = OK;
+                // and then release the bus
+                TWI_stop();
+                dpt.hard_fini = OK;
 
-			break;
-	}
+                break;
+        }
 }
 
 
@@ -393,51 +394,50 @@ static void DPT_I2C_call_back(twi_state_t state, u8 nb_data, void* misc)
 //
 
 // dispatcher initialization
-void DPT_init(void)
+void dpt_init(void)
 {
-	u8 i;
+        u8 i;
 
-	// channels and lock reset
-	for ( i = 0; i < DPT_CHAN_NB; i++ ) {
-		DPT.channels[i] = NULL;
-	}
-	DPT.lock = 0;
+        // channels and lock reset
+        for (i = 0; i < DPT_CHAN_NB; i++)
+                dpt.channels[i] = NULL;
+        dpt.lock = 0;
 
-	// appli thread init
-	FIFO_init(&DPT.appli_fifo, &DPT.appli_buf, NB_APPLI_FRAMES, sizeof(frame_t));
-	PT_INIT(&DPT.appli_pt);
+        // appli thread init
+        FIFO_init(&dpt.appli_fifo, &dpt.appli_buf, NB_APPLI_FRAMES, sizeof(frame_t));
+        PT_INIT(&dpt.appli_pt);
 
-	// in thread init
-	FIFO_init(&DPT.in_fifo, &DPT.in_buf, NB_IN_FRAMES, sizeof(frame_t));
-	PT_INIT(&DPT.in_pt);
+        // in thread init
+        FIFO_init(&dpt.in_fifo, &dpt.in_buf, NB_IN_FRAMES, sizeof(frame_t));
+        PT_INIT(&dpt.in_pt);
 
-	// out thread init
-	DPT.sl_addr = DPT_SELF_ADDR;
-	DPT.time_out = TIME_MAX;
-	FIFO_init(&DPT.out_fifo, &DPT.out_buf, NB_OUT_FRAMES, sizeof(frame_t));
-	PT_INIT(&DPT.out_pt);
-	DPT.hard_fini = OK;
+        // out thread init
+        dpt.sl_addr = DPT_SELF_ADDR;
+        dpt.time_out = TIME_MAX;
+        FIFO_init(&dpt.out_fifo, &dpt.out_buf, NB_OUT_FRAMES, sizeof(frame_t));
+        PT_INIT(&dpt.out_pt);
+        dpt.hard_fini = OK;
 
-	// start TWI layer
-	TWI_init(DPT_I2C_call_back, NULL);
+        // start TWI layer
+        TWI_init(dpt_i2c_call_back, NULL);
 }
 
 
 // dispatcher time-out handling
-void DPT_run(void)
+void dpt_run(void)
 {
-	// if current time is above the computed time-out
-	if ( (TIME_get() > DPT.time_out) && (DPT.hard_fini != OK) ) {
-		cli();
-		DPT.hard.time_out = 1;
-		// fake an interrupt with twi layer error
-		DPT_I2C_call_back(TWI_ERROR, 0, NULL);
-		sei();
-	}
+        // if current time is above the computed time-out
+        if ((TIME_get() > dpt.time_out) && (dpt.hard_fini != OK)) {
+                cli();
+                dpt.hard.time_out = 1;
+                // fake an interrupt with twi layer error
+                dpt_i2c_call_back(TWI_ERROR, 0, NULL);
+                sei();
+        }
 
-	(void)PT_SCHEDULE(DPT_out(&DPT.out_pt));
-	(void)PT_SCHEDULE(DPT_in(&DPT.in_pt));
-	(void)PT_SCHEDULE(DPT_appli(&DPT.appli_pt));
+        (void)PT_SCHEDULE(dpt_out(&dpt.out_pt));
+        (void)PT_SCHEDULE(dpt_in(&dpt.in_pt));
+        (void)PT_SCHEDULE(dpt_appli(&dpt.appli_pt));
 }
 
 
@@ -453,103 +453,103 @@ void DPT_run(void)
 //
 // the available channel is directly set in the structure
 // if it is 0xff, it means no more channel are available
-void DPT_register(dpt_interface_t* interf)
+void dpt_register(dpt_interface_t* interf)
 {
-	u8 i;
+        u8 i;
 
-	// check if interface is invalid
-	if ( interf == NULL ) {
-		// then quit immediatly
-		return;
-	}
+        // check if interface is invalid
+        if (interf == NULL) {
+                // then quit immediatly
+                return;
+        }
 
-	// check if channel is invalid
-	if ( interf->channel >= DPT_CHAN_NB ) {
-		// then quit immediatly with invalid channel
-		interf->channel = 0xff;
-		return;
-	}
+        // check if channel is invalid
+        if (interf->channel >= DPT_CHAN_NB) {
+                // then quit immediatly with invalid channel
+                interf->channel = 0xff;
+                return;
+        }
 
-	// check if requested channel is free
-	// else find and use the next free
-	for ( i = interf->channel; i < DPT_CHAN_NB; i++ ) {
-		if ( DPT.channels[i] == NULL ) {
-			break;
-		}
-	}
-	// if none free, return error (0xff)
-	if ( i == DPT_CHAN_NB ) {
-		interf->channel = 0xff;
-		return;
-	}
+        // check if requested channel is free
+        // else find and use the next free
+        for (i = interf->channel; i < DPT_CHAN_NB; i++) {
+                if (dpt.channels[i] == NULL) {
+                        break;
+                }
+        }
+        // if none free, return error (0xff)
+        if (i == DPT_CHAN_NB ){
+                interf->channel = 0xff;
+                return;
+        }
 
-	// store interface for used channel
-	DPT.channels[i] = interf;
+        // store interface for used channel
+        dpt.channels[i] = interf;
 
-	// set the available channel
-	interf->channel = i;
+        // set the available channel
+        interf->channel = i;
 }
 
 
-void DPT_lock(dpt_interface_t* interf)
+void dpt_lock(dpt_interface_t* interf)
 {
-	// set the lock bit associated to the channel
-	DPT.lock |= 1 << interf->channel;
+        // set the lock bit associated to the channel
+        dpt.lock |= 1 << interf->channel;
 }
 
 
-void DPT_unlock(dpt_interface_t* interf)
+void dpt_unlock(dpt_interface_t* interf)
 {
-	// reset the lock bit associated to the channel
-	DPT.lock &= ~(1 << interf->channel);
+        // reset the lock bit associated to the channel
+        dpt.lock &= ~(1 << interf->channel);
 }
 
 
-u8 DPT_tx(dpt_interface_t* interf, frame_t* fr)
+u8 dpt_tx(dpt_interface_t* interf, frame_t* fr)
 {
-	u8 i;
+        u8 i;
 
-	// if the tx is locked by a channel of higher priority
-	for ( i = 0; (i < DPT_CHAN_NB) && (i < interf->channel); i++ ) {
-		if ( DPT.lock & (1 << i) ) {
-			// the sender shall retry
-			// so return KO
-			return KO;
-		}
-	}
+        // if the tx is locked by a channel of higher priority
+        for (i = 0; (i < DPT_CHAN_NB) && (i < interf->channel); i++) {
+                if ( dpt.lock & (1 << i) ) {
+                        // the sender shall retry
+                        // so return KO
+                        return KO;
+                }
+        }
 
-	// if the sender didn't lock the channel
-	if ( !(DPT.lock & (1 << interf->channel)) ) {
-		// it can't send the frame
-		return KO;
-	}
+        // if the sender didn't lock the channel
+        if (!(dpt.lock & (1 << interf->channel))) {
+                // it can't send the frame
+                return KO;
+        }
 
-	// if the frame is not a response
-	if ( !fr->resp ) {
-		// increment transaction id
-		DPT.t_id++;
+        // if the frame is not a response
+        if (!fr->resp) {
+                // increment transaction id
+                dpt.t_id++;
 
-		// and set it in the current frame
-		fr->t_id = DPT.t_id;
-	}
+                // and set it in the current frame
+                fr->t_id = dpt.t_id;
+        }
 
-	// try to enqueue the frame
-	return FIFO_put(&DPT.appli_fifo, fr);
+        // try to enqueue the frame
+        return FIFO_put(&dpt.appli_fifo, fr);
 }
 
 
-void DPT_set_sl_addr(u8 addr)
+void dpt_set_sl_addr(u8 addr)
 {
-	// save slave address
-	DPT.sl_addr = addr;
+        // save slave address
+        dpt.sl_addr = addr;
 
-	// set slave address at TWI level
-	TWI_set_sl_addr(addr);
+        // set slave address at TWI level
+        TWI_set_sl_addr(addr);
 }
 
 
-void DPT_gen_call(u8 flag)
+void dpt_gen_call(u8 flag)
 {
-	// just set the general call recognition mode
-	TWI_gen_call(flag);
+        // just set the general call recognition mode
+        TWI_gen_call(flag);
 }

@@ -191,27 +191,27 @@ PT_THREAD(BSC_frame_handling(pt_t* pt))
 		// set response frame arguments
 		break;
 
-	case FR_SPI_READ:
-		// only read data
-		SPI_master(NULL, 0, BSC.resp.argv, BSC.in.len);
-
-		// wait until reading is done
-		PT_WAIT_UNTIL(pt, SPI_is_fini());
-
-		// check the transfer
-		BSC.resp.error = SPI_is_ok();
-		break;
-
-	case FR_SPI_WRITE:
-		// only write data
-		SPI_master(BSC.in.argv, BSC.in.len, NULL, 0);
-
-		// wait until writing is done
-		PT_WAIT_UNTIL(pt, SPI_is_fini());
-
-		// check the transfer
-		BSC.resp.error = SPI_is_ok();
-		break;
+//	case FR_SPI_READ:
+//		// only read data
+//		SPI_master(NULL, 0, BSC.resp.argv, BSC.in.len);
+//
+//		// wait until reading is done
+//		PT_WAIT_UNTIL(pt, SPI_is_fini());
+//
+//		// check the transfer
+//		BSC.resp.error = SPI_is_ok();
+//		break;
+//
+//	case FR_SPI_WRITE:
+//		// only write data
+//		SPI_master(BSC.in.argv, BSC.in.len, NULL, 0);
+//
+//		// wait until writing is done
+//		PT_WAIT_UNTIL(pt, SPI_is_fini());
+//
+//		// check the transfer
+//		BSC.resp.error = SPI_is_ok();
+//		break;
 
 	case FR_WAIT:
 		// get current time
@@ -274,8 +274,13 @@ PT_THREAD(BSC_frame_handling(pt_t* pt))
 		case PRE_3_STORAGE:
 		case PRE_4_STORAGE:
 		case PRE_5_STORAGE:
+		case PRE_6_STORAGE:
+		case PRE_7_STORAGE:
+		case PRE_8_STORAGE:
+		case PRE_9_STORAGE:
 			// extract the frame from EEPROM
-			EEP_read((u16)((u8*)BSC.addr + BSC.in.argv[3] * sizeof(frame_t)), (u8*)&BSC.cont, sizeof(frame_t));
+                        BSC.addr = (u16*)(BSC.in.argv[3] * sizeof(frame_t));
+			EEP_read((u16)((u8*)BSC.addr), (u8*)&BSC.cont, sizeof(frame_t));
 
 			// wait until reading is done
 			PT_WAIT_UNTIL(pt, EEP_is_fini());
@@ -349,7 +354,8 @@ PT_THREAD(BSC_out(pt_t* pt))
 	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.out_fifo, &BSC.out));
 
 	// be sure the response is sent
-	if ( KO == DPT_tx(&BSC.interf, &BSC.out) ) {
+        dpt_lock(&BSC.interf);
+	if ( KO == dpt_tx(&BSC.interf, &BSC.out) ) {
 		// else requeue the frame
 		FIFO_unget(&BSC.out_fifo, &BSC.out);
 	}
@@ -391,17 +397,17 @@ void BSC_init(void)
 				| _CM(FR_EEP_WRITE)
 				| _CM(FR_FLH_READ)
 				| _CM(FR_FLH_WRITE)
-				| _CM(FR_SPI_READ)
-				| _CM(FR_SPI_WRITE)
+//				| _CM(FR_SPI_READ)
+//				| _CM(FR_SPI_WRITE)
 				| _CM(FR_WAIT)
 				| _CM(FR_CONTAINER);
 	BSC.interf.queue = &BSC.in_fifo;
-	DPT_register(&BSC.interf);
+	dpt_register(&BSC.interf);
 
 	// drivers init
 	SLP_init();
 	EEP_init();
-	SPI_init(SPI_MASTER, SPI_THREE, SPI_MSB, SPI_DIV_16);
+	//SPI_init(SPI_MASTER, SPI_THREE, SPI_MSB, SPI_DIV_16);
 
 	// read reset frame
 	EEP_read(0x00, (u8*)&fr, sizeof(frame_t));
@@ -417,7 +423,7 @@ void BSC_init(void)
 	FIFO_put(&BSC.out_fifo, &fr);
 
 	// lock the dispatcher to be able to treat the frame
-	DPT_lock(&BSC.interf);
+	dpt_lock(&BSC.interf);
 }
 
 
@@ -432,6 +438,6 @@ void BSC_run(void)
 	// if all frames are handled
 	if ( !BSC.is_running && ( FIFO_full(&BSC.out_fifo) == 0 ) && ( FIFO_full(&BSC.in_fifo) == 0 ) ) {
 		// unlock the dispatcher
-		DPT_unlock(&BSC.interf);
+		dpt_unlock(&BSC.interf);
 	}
 }

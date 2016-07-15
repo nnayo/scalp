@@ -91,13 +91,13 @@ typedef struct {
 //
 
 // dispatcher initialization
-extern void DPT_init(void);
+extern void dpt_init(void);
 
 
 // dispatcher thread
 // in charge of the time-out handling
 // and frame dispatching
-extern void DPT_run(void);
+extern void dpt_run(void);
 
 
 // dispatcher registering function
@@ -113,7 +113,7 @@ extern void DPT_run(void);
 //
 // the available channel is directly set in the structure
 // if it is 0xff, it means no more channel are available
-extern void DPT_register(dpt_interface_t* interf);
+extern void dpt_register(dpt_interface_t* interf);
 
 
 // dispatcher channel lock
@@ -122,7 +122,7 @@ extern void DPT_register(dpt_interface_t* interf);
 // only channel with lower value
 // (i.e. higher priority) shall be able to
 // send frames.
-extern void DPT_lock(dpt_interface_t* interf);
+extern void dpt_lock(dpt_interface_t* interf);
 
 
 // dispatcher channel unlock
@@ -130,7 +130,7 @@ extern void DPT_lock(dpt_interface_t* interf);
 // unlock the given channel
 // channels with lower priority will
 // be able to send frames
-extern void DPT_unlock(dpt_interface_t* interf);
+extern void dpt_unlock(dpt_interface_t* interf);
 
 
 // dispatcher frame sending function
@@ -142,17 +142,17 @@ extern void DPT_unlock(dpt_interface_t* interf);
 // if a frame can't be sent, it probably
 // means the channel is not locked or
 // a channel of higher priority is locked
-extern u8 DPT_tx(dpt_interface_t* interf, frame_t* frame);
+extern u8 dpt_tx(dpt_interface_t* interf, frame_t* frame);
 
 
 // dispatcher set TWI slave address function
 //
-void DPT_set_sl_addr(u8 addr);
+void dpt_set_sl_addr(u8 addr);
 
 
 // dispatcher enable TWI general call recognition function
 //
-void DPT_gen_call(u8 flag);
+void dpt_gen_call(u8 flag);
 
 
 #endif	// __DISPATCHER_H__

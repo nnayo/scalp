@@ -295,7 +295,7 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 	// systematically unlock the channel
 	// because most of time no response is sent
 	// when a response is needed, the channel will be locked
-	DPT_unlock(&LOG.interf);
+	dpt_unlock(&LOG.interf);
 
 	switch ( LOG.state ) {
 		case LOG_OFF:
@@ -340,10 +340,8 @@ static PT_THREAD( LOG_log(pt_t* pt) )
 		LOG_command(&LOG.fr);
 
 		// send the response
-		DPT_lock(&LOG.interf);
-		PT_WAIT_UNTIL(pt, OK == DPT_tx(&LOG.interf, &LOG.fr));
-		DPT_unlock(&LOG.interf);
-
+		PT_WAIT_UNTIL(pt, (dpt_lock(&LOG.interf), OK == dpt_tx(&LOG.interf, &LOG.fr)));
+		dpt_unlock(&LOG.interf);
 
 		// and wait till the next frame
 		PT_RESTART(pt);
@@ -459,7 +457,7 @@ void LOG_init(void)
 #else
 	LOG.interf.cmde_mask = -1;
 #endif
-	DPT_register(&LOG.interf);
+	dpt_register(&LOG.interf);
 }
 
 

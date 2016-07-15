@@ -155,6 +155,8 @@ static PT_THREAD( ROUT_rout(pt_t* pt) )
 		// ignore it
 		PT_RESTART(pt);
 	}
+        // else lock the channel until responsed
+        dpt_lock(&ROUT.interf);
 
 	// treat it
 	switch ( ROUT.fr.cmde ) {
@@ -181,11 +183,11 @@ static PT_THREAD( ROUT_rout(pt_t* pt) )
 
 	// and send the response
 	ROUT.fr.resp = 1;
-	PT_WAIT_UNTIL(pt, DPT_tx(&ROUT.interf, &ROUT.fr));
+	PT_WAIT_UNTIL(pt, dpt_tx(&ROUT.interf, &ROUT.fr));
 
 	// unlock the channel if no more frame are unqueued
 	if ( FIFO_full(&ROUT.in_fifo) == 0 ) {
-		DPT_unlock(&ROUT.interf);
+		dpt_unlock(&ROUT.interf);
 	}
 
 	// loop back for next frame
@@ -210,7 +212,7 @@ void ROUT_init(void)
 	ROUT.interf.channel = 9;
 	ROUT.interf.cmde_mask = _CM(FR_ROUT_LIST) | _CM(FR_ROUT_LINE) | _CM(FR_ROUT_ADD) | _CM(FR_ROUT_DEL);
 	ROUT.interf.queue = &ROUT.in_fifo;
-	DPT_register(&ROUT.interf);
+	dpt_register(&ROUT.interf);
 }
 
 

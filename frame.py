@@ -3,10 +3,10 @@
 """
 each frame are composed of :
 	- destination field 	offset + 0
-	- origin field 			offset + 1
-	- transaction id 		offset + 2
-	- state 				offset + 3
-	- command field 		offset + 4
+	- origin field 		offset + 1
+	- transaction id 	offset + 2
+	- state 		offset + 3
+	- command field 	offset + 4
 	- argument #0 field 	offset + 5
 	- argument #1 field 	offset + 6
 	- argument #2 field 	offset + 7
@@ -577,7 +577,7 @@ class container(Frame):
 	argv #2 value :
 		- 0xVV : nb encapsulated frames
 	argv #3 memory type or container number in eeprom: 
-		- 0x00-0x05 : predefined eeprom container (in this case the other parameters are useless)
+		- 0x00-0x09 : predefined eeprom container (in this case the other parameters are useless)
 		- 0xee eeprom, 
 		- 0xff flash, 
 		- 0xaa ram, 
@@ -591,7 +591,11 @@ class container(Frame):
 	PRE_3	= 0x03
 	PRE_4	= 0x04
 	PRE_5	= 0x05
-	RAM		= 0xaa
+	PRE_6	= 0x06
+	PRE_7	= 0x07
+	PRE_8	= 0x08
+	PRE_9	= 0x09
+	RAM	= 0xaa
 	EEPROM	= 0xee
 	FLASH	= 0xff
 
@@ -602,6 +606,10 @@ class container(Frame):
 		'PRE_3_STORAGE':'0x03',
 		'PRE_4_STORAGE':'0x04',
 		'PRE_5_STORAGE':'0x05',
+		'PRE_6_STORAGE':'0x06',
+		'PRE_7_STORAGE':'0x07',
+		'PRE_8_STORAGE':'0x08',
+		'PRE_9_STORAGE':'0x09',
 		'RAM_STORAGE':'0xaa',
 		'EEPROM_STORAGE':'0xee',
 		'FLASH_STORAGE':'0xff',
@@ -678,16 +686,11 @@ class state(Frame):
 		'FR_STATE_SET':'0x5e',
 
 		'FR_STATE_INIT':'0x00',
-		'FR_STATE_CONE_OPENING':'0x01',
-		'FR_STATE_AERO_OPENING':'0x02',
-		'FR_STATE_AERO_OPEN':'0x03',
-		'FR_STATE_CONE_CLOSING':'0x04',
-		'FR_STATE_CONE_CLOSED':'0x05',
-		'FR_STATE_WAITING':'0x10',
-		'FR_STATE_FLIGHT':'0x20',
-		'FR_STATE_CONE_OPEN':'0x30',
-		'FR_STATE_BRAKING':'0x40',
-		'FR_STATE_PARACHUTE':'0x50',
+		'FR_STATE_PARA_OPENING':'0x01',
+		'FR_STATE_PARA_CLOSING':'0x02',
+		'FR_STATE_WAITING':'0x04',
+		'FR_STATE_FLIGHT':'0x08',
+		'FR_STATE_PARACHUTE':'0x10',
 	}
 
 	def __init__(self, dest, orig, t_id, stat, *argv):
@@ -801,8 +804,7 @@ class minut_servo_cmd(Frame):
 	cmde = 0x17
 
 	defines = {
-		'FR_SERVO_CONE':'0xc0',
-		'FR_SERVO_AERO':'0xae',
+		'FR_SERVO_PARA':'0xc0',
 		'FR_SERVO_OPEN':'0x09',
 		'FR_SERVO_CLOSE':'0xc1',
 		'FR_SERVO_OFF':'0x0f',
@@ -830,8 +832,7 @@ class minut_servo_info(Frame):
 	cmde = 0x18
 
 	defines = {
-		'FR_SERVO_CONE':'0xc0',		# reuse from minut_servo_cmd
-		'FR_SERVO_AERO':'0xae',		# reuse from minut_servo_cmd
+		'FR_SERVO_PARA':'0xc0',		# reuse from minut_servo_cmd
 		'FR_SERVO_OPEN':'0x09',		# reuse from minut_servo_cmd
 		'FR_SERVO_CLOSE':'0xc1',	# reuse from minut_servo_cmd
 		'FR_SERVO_OFF':'0x0f',		# reuse from minut_servo_cmd

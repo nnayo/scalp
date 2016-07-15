@@ -20,30 +20,29 @@
 # define FRAME_ARGV_OFFSET	5
 
 // CONTAINER
-# define PRE_1_STORAGE	0x01
 # define FLASH_STORAGE	0xff
-# define PRE_3_STORAGE	0x03
-# define RAM_STORAGE	0xaa
 # define PRE_5_STORAGE	0x05
+# define PRE_1_STORAGE	0x01
+# define PRE_3_STORAGE	0x03
+# define PRE_6_STORAGE	0x06
+# define PRE_8_STORAGE	0x08
 # define PRE_0_STORAGE	0x00
+# define PRE_7_STORAGE	0x07
 # define PRE_2_STORAGE	0x02
+# define PRE_9_STORAGE	0x09
+# define RAM_STORAGE	0xaa
 # define PRE_4_STORAGE	0x04
 # define EEPROM_STORAGE	0xee
 
 // STATE
-# define FR_STATE_BRAKING	0x40
-# define FR_STATE_CONE_CLOSED	0x05
-# define FR_STATE_PARACHUTE	0x50
+# define FR_STATE_PARACHUTE	0x10
+# define FR_STATE_WAITING	0x04
 # define FR_STATE_INIT	0x00
-# define FR_STATE_AERO_OPEN	0x03
-# define FR_STATE_WAITING	0x10
 # define FR_STATE_GET	0x9e
-# define FR_STATE_CONE_OPENING	0x01
 # define FR_STATE_SET	0x5e
-# define FR_STATE_FLIGHT	0x20
-# define FR_STATE_CONE_OPEN	0x30
-# define FR_STATE_AERO_OPENING	0x02
-# define FR_STATE_CONE_CLOSING	0x04
+# define FR_STATE_PARA_OPENING	0x01
+# define FR_STATE_FLIGHT	0x08
+# define FR_STATE_PARA_CLOSING	0x02
 
 // MUX_RESET
 # define FR_MUX_RESET_UNRESET	0x00
@@ -57,15 +56,13 @@
 # define FR_SERVO_OFF	0x0f
 # define FR_SERVO_CLOSE	0xc1
 # define FR_SERVO_OPEN	0x09
-# define FR_SERVO_CONE	0xc0
-# define FR_SERVO_AERO	0xae
+# define FR_SERVO_PARA	0xc0
 
 // MINUT_SERVO_INFO
 # define FR_SERVO_SAVE	0x5a
 # define FR_SERVO_OFF	0x0f
 # define FR_SERVO_OPEN	0x09
-# define FR_SERVO_AERO	0xae
-# define FR_SERVO_CONE	0xc0
+# define FR_SERVO_PARA	0xc0
 # define FR_SERVO_CLOSE	0xc1
 # define FR_SERVO_READ	0x4e
 
@@ -180,7 +177,7 @@ typedef enum {
 	// argv #2 value :
 	// - 0xVV : nb encapsulated frames
 	// argv #3 memory type or container number in eeprom:
-	// - 0x00-0x05 : predefined eeprom container (in this case the other parameters are useless)
+	// - 0x00-0x09 : predefined eeprom container (in this case the other parameters are useless)
 	// - 0xee eeprom,
 	// - 0xff flash,
 	// - 0xaa ram,

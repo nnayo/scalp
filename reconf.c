@@ -172,8 +172,8 @@ static PT_THREAD( RCF_out(pt_t* pt) )
 	PT_WAIT_UNTIL(pt, FIFO_get(&RCF.out_fifo, &RCF.out));
 
 	// send the reconf frame
-	DPT_lock(&RCF.interf);
-	if ( !DPT_tx(&RCF.interf, &RCF.out) ) {
+	dpt_lock(&RCF.interf);
+	if ( !dpt_tx(&RCF.interf, &RCF.out) ) {
 		FIFO_unget(&RCF.out_fifo, &RCF.out);
 	}
 
@@ -271,7 +271,7 @@ void RCF_init(void)
 	RCF.interf.channel = 1;
 	RCF.interf.cmde_mask = _CM(FR_MINUT_TAKE_OFF) | _CM(FR_RECONF_MODE);
 	RCF.interf.queue = &RCF.in_fifo;
-	DPT_register(&RCF.interf);
+	dpt_register(&RCF.interf);
 
 	// init out thread
 	PT_INIT(&RCF.out_pt);
@@ -288,6 +288,6 @@ void RCF_run(void)
 	// if fifoes are empty
 	if ( ( FIFO_full(&RCF.out_fifo) == 0 ) && ( FIFO_full(&RCF.out_fifo) == 0 ) ) {
 		// unlock the dispatcher
-		DPT_unlock(&RCF.interf);
+		dpt_unlock(&RCF.interf);
 	}
 }

@@ -190,9 +190,9 @@ static PT_THREAD( ALV_tx(pt_t* pt) )
 		ALV.fr.argv[0] = 0x00;
 
 		// send the status request
-		DPT_lock(&ALV.interf);
-		PT_WAIT_UNTIL(pt, OK == DPT_tx(&ALV.interf, &ALV.fr));
-		DPT_unlock(&ALV.interf);
+		dpt_lock(&ALV.interf);
+		PT_WAIT_UNTIL(pt, OK == dpt_tx(&ALV.interf, &ALV.fr));
+		dpt_unlock(&ALV.interf);
 	}
 	else {
 		// one more failure
@@ -216,9 +216,9 @@ static PT_THREAD( ALV_tx(pt_t* pt) )
 		ALV.fr.argv[0] = 0x00;
 		ALV.fr.argv[1] = 0x02;		// no bus active
 
-		DPT_lock(&ALV.interf);
-		PT_WAIT_UNTIL(pt, OK == DPT_tx(&ALV.interf, &ALV.fr));
-		DPT_unlock(&ALV.interf);
+		dpt_lock(&ALV.interf);
+		PT_WAIT_UNTIL(pt, OK == dpt_tx(&ALV.interf, &ALV.fr));
+		dpt_unlock(&ALV.interf);
 
 		// prevent any further lower trigger action
 		ALV.trigger |= ALV_LOWER_TRIGGER;
@@ -238,9 +238,9 @@ static PT_THREAD( ALV_tx(pt_t* pt) )
 		ALV.fr.argv[0] = 0x00;
 		ALV.fr.argv[1] = 0x03;		// bus mode is automatic
 
-		DPT_lock(&ALV.interf);
-		PT_WAIT_UNTIL(pt, OK == DPT_tx(&ALV.interf, &ALV.fr));
-		DPT_unlock(&ALV.interf);
+		dpt_lock(&ALV.interf);
+		PT_WAIT_UNTIL(pt, OK == dpt_tx(&ALV.interf, &ALV.fr));
+		dpt_unlock(&ALV.interf);
 
 		// prevent any further upper trigger action
 		ALV.trigger |= ALV_UPPER_TRIGGER;
@@ -280,7 +280,7 @@ void ALV_init(void)
 	ALV.interf.channel = 9;
 	ALV.interf.cmde_mask = _CM(FR_STATE);
 	ALV.interf.queue = &ALV.in_fifo;
-	DPT_register(&ALV.interf);
+	dpt_register(&ALV.interf);
 }
 
 

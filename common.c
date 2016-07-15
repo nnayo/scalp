@@ -95,7 +95,8 @@ static PT_THREAD( CMN_out(pt_t* pt) )
 	PT_WAIT_UNTIL(pt, OK == FIFO_get(&CMN.out_fifo, &fr));
 
 	// make sure to send the response
-	if ( KO == DPT_tx(&CMN.interf, &fr)) {
+        dpt_lock(&CMN.interf);
+	if (KO == dpt_tx(&CMN.interf, &fr)) {
 		// else requeue the frame
 		FIFO_unget(&CMN.out_fifo, &fr);
 	}
@@ -261,6 +262,7 @@ static PT_THREAD( CMN_blink(pt_t* pt) )
 		if ( CMN.green_led.cnt >= CMN.green_led.hi ) {
 			// turn it off
 			LED_PORT &= ~GREEN_LED;
+                        CMN.green_led.cnt = 0;
 		}
 	}
 	else {
@@ -268,27 +270,30 @@ static PT_THREAD( CMN_blink(pt_t* pt) )
 		if ( CMN.green_led.cnt >= CMN.green_led.lo ) {
 			// turn it ON
 			LED_PORT |= GREEN_LED;
+                        CMN.green_led.cnt = 0;
 		}
 	}
 
-	// blink orange led
-	CMN.orange_led.cnt++;
-
-	// orange led ON ?
-	if ( LED_PORT & ORANGE_LED ) {
-		// led ON for its hi duration ?
-		if ( CMN.orange_led.cnt >= CMN.orange_led.hi ) {
-			// turn it off
-			LED_PORT &= ~ORANGE_LED;
-		}
-	}
-	else {
-		// led off for its lo duration ?
-		if ( CMN.orange_led.cnt >= CMN.orange_led.lo ) {
-			// turn it ON
-			LED_PORT |= ORANGE_LED;
-		}
-	}
+//	// blink orange led
+//	CMN.orange_led.cnt++;
+//
+//	// orange led ON ?
+//	if ( LED_PORT & ORANGE_LED ) {
+//		// led ON for its hi duration ?
+//		if ( CMN.orange_led.cnt >= CMN.orange_led.hi ) {
+//			// turn it off
+//			LED_PORT &= ~ORANGE_LED;
+//                        CMN.orange_led.cnt = 0;
+//		}
+//	}
+//	else {
+//		// led off for its lo duration ?
+//		if ( CMN.orange_led.cnt >= CMN.orange_led.lo ) {
+//			// turn it ON
+//			LED_PORT |= ORANGE_LED;
+//                        CMN.orange_led.cnt = 0;
+//		}
+//	}
 
 	PT_RESTART(pt);
 
@@ -323,7 +328,7 @@ void CMN_init(void)
 	CMN.interf.channel = 3;
 	CMN.interf.cmde_mask = _CM(FR_STATE) | _CM(FR_TIME_GET) | _CM(FR_MUX_RESET) | _CM(FR_LED_CMD);
 	CMN.interf.queue = &CMN.in_fifo;
-	DPT_register(&CMN.interf);
+	dpt_register(&CMN.interf);
 
 	// set led port direction
 	LED_DDR |= GREEN_LED | ORANGE_LED;
@@ -346,7 +351,7 @@ void CMN_run(void)
 	// if all frames are handled
 	if ( ( FIFO_full(&CMN.out_fifo) == 0 ) && ( FIFO_full(&CMN.in_fifo) == 0 ) ) {
 		// unlock the dispatcher
-		DPT_unlock(&CMN.interf);
+		dpt_unlock(&CMN.interf);
 	}
 
 	// blink the leds
