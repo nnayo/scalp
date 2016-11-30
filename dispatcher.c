@@ -38,13 +38,13 @@
 // from the application point of view.
 // node disconnection tolerance by dynamic re-routing
 //
-//   /A\    /B\    /C\        /Y\    /Z\
+//   |A|    |B|    |C|        |Y|    |Z|
 //   \ /    \ /    \ / ...... \ /    \ /
 //    |      |      |          |      |
 // ---+------+------+---+------+------+---------- soft
 //           appli fifo |  in fifo ^
-//                    /   \        |
-//                    \   /
+//                    |   |        |
+//                    |   |
 //             out fifo |
 //            ----------+---------- twi
 //
@@ -78,24 +78,24 @@
 //
 
 static struct {
-        dpt_interface_t* channels[DPT_CHAN_NB];	// available channels
+        struct scalp_dpt_interface* channels[DPT_CHAN_NB];	// available channels
         u64 lock;				// lock bitfield
 
         pt_t appli_pt;				// appli thread
-        fifo_t appli_fifo;
-        frame_t appli_buf[NB_APPLI_FRAMES];
-        frame_t appli;
+        struct fifo appli_fifo;
+        struct scalp appli_buf[NB_APPLI_FRAMES];
+        struct scalp appli;
 
         pt_t in_pt;				// in thread
-        fifo_t in_fifo;
-        frame_t in_buf[NB_IN_FRAMES];
-        frame_t in;
+        struct fifo in_fifo;
+        struct scalp in_buf[NB_IN_FRAMES];
+        struct scalp in;
 
         pt_t out_pt;				// out thread
-        fifo_t out_fifo;
-        frame_t out_buf[NB_OUT_FRAMES];
-        frame_t out;
-        frame_t hard;
+        struct fifo out_fifo;
+        struct scalp out_buf[NB_OUT_FRAMES];
+        struct scalp out;
+        struct scalp hard;
         volatile u8 hard_fini;
 
         u8 sl_addr;				// own I2C slave address
@@ -109,10 +109,10 @@ static struct {
 //
 
 // dispatch the frame to each registered listener
-static void dpt_dispatch(frame_t* fr)
+static void scalp_dpt_dispatch(struct scalp* fr)
 {
         u8 i;
-        fr_cmdes_t cmde = fr->cmde;
+        enum scalp_cmde cmde = fr->cmde;
 
         // for each registered commands ranges
         for (i = 0; i < DPT_CHAN_NB; i++) {
@@ -125,20 +125,20 @@ static void dpt_dispatch(frame_t* fr)
                 // and if a queue is available
                 if (dpt.channels[i]->cmde_mask & _CM(cmde) && dpt.channels[i]->queue)
                         // enqueue it
-                        FIFO_put(dpt.channels[i]->queue, fr);
+                        fifo_put(dpt.channels[i]->queue, fr);
                 //		// if command is in a range
                 //		if (dpt.channels[i]->cmde_mask & _CM(cmde))
                 //			// enqueue it if a queue is available
-                //			if (dpt.channels[i]->queue && (OK == FIFO_put(dpt.channels[i]->queue, fr)))
+                //			if (dpt.channels[i]->queue && (OK == fifo_put(dpt.channels[i]->queue, fr)))
                 //				// if a success, lock the channel
                 //				dpt.lock |= 1 << i;
         }
 }
 
 
-static PT_THREAD( dpt_appli(pt_t* pt) )
+static PT_THREAD( scalp_dpt_appli(pt_t* pt) )
 {
-        frame_t fr;
+        struct scalp fr;
         u8 routes[MAX_ROUTES];
         u8 nb_routes;
         u8 i;
@@ -146,7 +146,7 @@ static PT_THREAD( dpt_appli(pt_t* pt) )
         PT_BEGIN(pt);
 
         // if any awaiting incoming frames
-        PT_WAIT_UNTIL(pt, FIFO_get(&dpt.appli_fifo, &fr));
+        PT_WAIT_UNTIL(pt, fifo_get(&dpt.appli_fifo, &fr));
 
         // route the frame
         ROUT_route(fr.dest, routes, &nb_routes);
@@ -163,7 +163,7 @@ static PT_THREAD( dpt_appli(pt_t* pt) )
                 fr.dest = routes[i];
                 // if the frame destination is only local
                 if ((fr.dest == DPT_SELF_ADDR) || (fr.dest == dpt.sl_addr)) {
-                        FIFO_put(&dpt.in_fifo, &fr);
+                        fifo_put(&dpt.in_fifo, &fr);
 
                         // short cut the handling to speed up
                         break;
@@ -172,12 +172,12 @@ static PT_THREAD( dpt_appli(pt_t* pt) )
                 // if broadcasting
                 if (fr.dest == DPT_BROADCAST_ADDR) {
                         // also goes to local node
-                        FIFO_put(&dpt.in_fifo, &fr);
+                        fifo_put(&dpt.in_fifo, &fr);
                 }
 
                 // and finally goes to distant node
                 fr.orig = dpt.sl_addr;
-                FIFO_put(&dpt.out_fifo, &fr);
+                fifo_put(&dpt.out_fifo, &fr);
         }
 
         // so loop back for the next frame
@@ -187,17 +187,17 @@ static PT_THREAD( dpt_appli(pt_t* pt) )
 }
 
 
-static PT_THREAD( dpt_in(pt_t* pt) )
+static PT_THREAD( scalp_dpt_in(pt_t* pt) )
 {
-        frame_t fr;
+        struct scalp fr;
 
         PT_BEGIN(pt);
 
         // if any awaiting incoming frames
-        PT_WAIT_UNTIL(pt, FIFO_get(&dpt.in_fifo, &fr));
+        PT_WAIT_UNTIL(pt, fifo_get(&dpt.in_fifo, &fr));
 
         // dispatch the frame
-        dpt_dispatch(&fr);
+        scalp_dpt_dispatch(&fr);
 
         // the frame has been sent to its destination
         // so loop back for the next frame
@@ -207,7 +207,7 @@ static PT_THREAD( dpt_in(pt_t* pt) )
 }
 
 
-static PT_THREAD( dpt_out(pt_t* pt) )
+static PT_THREAD( scalp_dpt_out(pt_t* pt) )
 {
         u8 twi_res;
 
@@ -216,11 +216,11 @@ static PT_THREAD( dpt_out(pt_t* pt) )
         // if no twi transfer running
         if (dpt.hard_fini == OK) {
                 // read any available frame
-                PT_WAIT_UNTIL(pt, FIFO_get(&dpt.out_fifo, &dpt.hard));
+                PT_WAIT_UNTIL(pt, fifo_get(&dpt.out_fifo, &dpt.hard));
 
                 // compute and save time-out limit
                 // byte transmission is typically 100 us
-                dpt.time_out = TIME_get() + TIME_1_MSEC * sizeof(frame_t);
+                dpt.time_out = time_get() + TIME_1_MSEC * sizeof(struct scalp);
 
                 // now a twi transfer shall begin
                 dpt.hard_fini = KO;
@@ -230,16 +230,16 @@ static PT_THREAD( dpt_out(pt_t* pt) )
         // the frame characteristics to correctly complete the fields of the response
         // in case of I2C read or write are taken from the dpt.hard frame
         switch (dpt.hard.cmde) {
-        case FR_I2C_READ:
-                twi_res = TWI_ms_rx(dpt.hard.dest, dpt.hard.len, (u8*)&dpt.hard + FRAME_ARGV_OFFSET);
+        case SCALP_TWIREAD:
+                twi_res = twi_ms_rx(dpt.hard.dest, dpt.hard.len, (u8*)&dpt.hard + SCALP_ARGV_OFFSET);
                 break;
 
-        case FR_I2C_WRITE:
-                twi_res = TWI_ms_tx(dpt.hard.dest, dpt.hard.len, (u8*)&dpt.hard + FRAME_ARGV_OFFSET);
+        case SCALP_TWIWRITE:
+                twi_res = twi_ms_tx(dpt.hard.dest, dpt.hard.len, (u8*)&dpt.hard + SCALP_ARGV_OFFSET);
                 break;
 
         default:
-                twi_res = TWI_ms_tx(dpt.hard.dest, sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&dpt.hard + FRAME_ORIG_OFFSET);
+                twi_res = twi_ms_tx(dpt.hard.dest, sizeof(struct scalp) - SCALP_ORIG_OFFSET, (u8*)&dpt.hard + SCALP_ORIG_OFFSET);
                 break;
         }
 
@@ -263,7 +263,7 @@ static PT_THREAD( dpt_out(pt_t* pt) )
 
 
 // I2C reception call-back
-static void dpt_i2c_call_back(twi_state_t state, u8 nb_data, void* misc)
+static void scalp_dpt_twi_call_back(enum twi_state state, u8 nb_data, void* misc)
 {
         (void)misc;
 
@@ -285,10 +285,10 @@ static void dpt_i2c_call_back(twi_state_t state, u8 nb_data, void* misc)
                 dpt.hard.error = 1;
 
                 // enqueue the response
-                FIFO_put(&dpt.in_fifo, &dpt.hard);
+                fifo_put(&dpt.in_fifo, &dpt.hard);
 
                 // and stop the com
-                TWI_stop();
+                twi_stop();
                 dpt.hard_fini = OK;
 
                 break;
@@ -300,7 +300,7 @@ static void dpt_i2c_call_back(twi_state_t state, u8 nb_data, void* misc)
 
                 // simple I2C actions are directly handled
                 // communications with other nodes will received a response later
-                if ((dpt.hard.cmde == FR_I2C_READ) || (dpt.hard.cmde == FR_I2C_WRITE)) {
+                if ((dpt.hard.cmde == SCALP_TWIREAD) || (dpt.hard.cmde == SCALP_TWIWRITE)) {
                         // update header
                         dpt.hard.orig = dpt.hard.dest;
                         dpt.hard.dest = DPT_SELF_ADDR;
@@ -308,11 +308,11 @@ static void dpt_i2c_call_back(twi_state_t state, u8 nb_data, void* misc)
                         dpt.hard.error = 0;
 
                         // enqueue the response
-                        FIFO_put(&dpt.in_fifo, &dpt.hard);
+                        fifo_put(&dpt.in_fifo, &dpt.hard);
                 }
 
                 // and stop the com
-                TWI_stop();
+                twi_stop();
                 dpt.hard_fini = OK;
 
                 break;
@@ -322,26 +322,26 @@ static void dpt_i2c_call_back(twi_state_t state, u8 nb_data, void* misc)
                 // only the origin, the cmde/resp and the arguments are received
                 dpt.hard_fini = KO;
                 dpt.hard.dest = dpt.sl_addr;
-                TWI_sl_rx(sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&dpt.hard + FRAME_ORIG_OFFSET);
+                twi_sl_rx(sizeof(struct scalp) - SCALP_ORIG_OFFSET, (u8*)&dpt.hard + SCALP_ORIG_OFFSET);
 
                 break;
 
         case TWI_SL_RX_END:
                 // if the msg len is correct
-                if (nb_data == (sizeof(frame_t) - FRAME_ORIG_OFFSET))
+                if (nb_data == (sizeof(struct scalp) - SCALP_ORIG_OFFSET))
                         // enqueue the response
-                        FIFO_put(&dpt.in_fifo, &dpt.hard);
+                        fifo_put(&dpt.in_fifo, &dpt.hard);
                 // else it is ignored
 
                 // release the bus
-                TWI_stop();
+                twi_stop();
                 dpt.hard_fini = OK;
 
                 break;
 
         case TWI_SL_TX_BEGIN:
                 // don't want to send a single byte
-                TWI_sl_tx(0, NULL);
+                twi_sl_tx(0, NULL);
 
                 break;
 
@@ -354,19 +354,19 @@ static void dpt_i2c_call_back(twi_state_t state, u8 nb_data, void* misc)
                 // only the origin, the cmde/resp and the arguments are received
                 dpt.hard_fini = KO;
                 dpt.hard.dest = dpt.sl_addr;
-                TWI_sl_rx(sizeof(frame_t) - FRAME_ORIG_OFFSET, (u8*)&dpt.hard + FRAME_ORIG_OFFSET);
+                twi_sl_rx(sizeof(struct scalp) - SCALP_ORIG_OFFSET, (u8*)&dpt.hard + SCALP_ORIG_OFFSET);
 
                 break;
 
         case TWI_GENCALL_END:
                 // if the msg len is correct
-                if (nb_data == (sizeof(frame_t) - FRAME_ORIG_OFFSET))
+                if (nb_data == (sizeof(struct scalp) - SCALP_ORIG_OFFSET))
                         // enqueue the incoming frame
-                        FIFO_put(&dpt.in_fifo, &dpt.hard);
+                        fifo_put(&dpt.in_fifo, &dpt.hard);
                 // else it is ignored
 
                 // release the bus
-                TWI_stop();
+                twi_stop();
                 dpt.hard_fini = OK;
 
                 break;
@@ -378,10 +378,10 @@ static void dpt_i2c_call_back(twi_state_t state, u8 nb_data, void* misc)
                 dpt.hard.time_out = 1;
 
                 // enqueue the response
-                FIFO_put(&dpt.in_fifo, &dpt.hard);
+                fifo_put(&dpt.in_fifo, &dpt.hard);
 
                 // and then release the bus
-                TWI_stop();
+                twi_stop();
                 dpt.hard_fini = OK;
 
                 break;
@@ -394,7 +394,7 @@ static void dpt_i2c_call_back(twi_state_t state, u8 nb_data, void* misc)
 //
 
 // dispatcher initialization
-void dpt_init(void)
+void scalp_dpt_init(void)
 {
         u8 i;
 
@@ -404,40 +404,40 @@ void dpt_init(void)
         dpt.lock = 0;
 
         // appli thread init
-        FIFO_init(&dpt.appli_fifo, &dpt.appli_buf, NB_APPLI_FRAMES, sizeof(frame_t));
+        fifo_init(&dpt.appli_fifo, &dpt.appli_buf, NB_APPLI_FRAMES, sizeof(struct scalp));
         PT_INIT(&dpt.appli_pt);
 
         // in thread init
-        FIFO_init(&dpt.in_fifo, &dpt.in_buf, NB_IN_FRAMES, sizeof(frame_t));
+        fifo_init(&dpt.in_fifo, &dpt.in_buf, NB_IN_FRAMES, sizeof(struct scalp));
         PT_INIT(&dpt.in_pt);
 
         // out thread init
         dpt.sl_addr = DPT_SELF_ADDR;
         dpt.time_out = TIME_MAX;
-        FIFO_init(&dpt.out_fifo, &dpt.out_buf, NB_OUT_FRAMES, sizeof(frame_t));
+        fifo_init(&dpt.out_fifo, &dpt.out_buf, NB_OUT_FRAMES, sizeof(struct scalp));
         PT_INIT(&dpt.out_pt);
         dpt.hard_fini = OK;
 
         // start TWI layer
-        TWI_init(dpt_i2c_call_back, NULL);
+        twi_init(scalp_dpt_twi_call_back, NULL);
 }
 
 
 // dispatcher time-out handling
-void dpt_run(void)
+void scalp_dpt_run(void)
 {
         // if current time is above the computed time-out
-        if ((TIME_get() > dpt.time_out) && (dpt.hard_fini != OK)) {
+        if ((time_get() > dpt.time_out) && (dpt.hard_fini != OK)) {
                 cli();
                 dpt.hard.time_out = 1;
                 // fake an interrupt with twi layer error
-                dpt_i2c_call_back(TWI_ERROR, 0, NULL);
+                scalp_dpt_twi_call_back(TWI_ERROR, 0, NULL);
                 sei();
         }
 
-        (void)PT_SCHEDULE(dpt_out(&dpt.out_pt));
-        (void)PT_SCHEDULE(dpt_in(&dpt.in_pt));
-        (void)PT_SCHEDULE(dpt_appli(&dpt.appli_pt));
+        (void)PT_SCHEDULE(scalp_dpt_out(&dpt.out_pt));
+        (void)PT_SCHEDULE(scalp_dpt_in(&dpt.in_pt));
+        (void)PT_SCHEDULE(scalp_dpt_appli(&dpt.appli_pt));
 }
 
 
@@ -453,7 +453,7 @@ void dpt_run(void)
 //
 // the available channel is directly set in the structure
 // if it is 0xff, it means no more channel are available
-void dpt_register(dpt_interface_t* interf)
+void scalp_dpt_register(struct scalp_dpt_interface* interf)
 {
         u8 i;
 
@@ -491,21 +491,21 @@ void dpt_register(dpt_interface_t* interf)
 }
 
 
-void dpt_lock(dpt_interface_t* interf)
+void scalp_dpt_lock(struct scalp_dpt_interface* interf)
 {
         // set the lock bit associated to the channel
         dpt.lock |= 1 << interf->channel;
 }
 
 
-void dpt_unlock(dpt_interface_t* interf)
+void scalp_dpt_unlock(struct scalp_dpt_interface* interf)
 {
         // reset the lock bit associated to the channel
         dpt.lock &= ~(1 << interf->channel);
 }
 
 
-u8 dpt_tx(dpt_interface_t* interf, frame_t* fr)
+u8 scalp_dpt_tx(struct scalp_dpt_interface* interf, struct scalp* fr)
 {
         u8 i;
 
@@ -534,22 +534,22 @@ u8 dpt_tx(dpt_interface_t* interf, frame_t* fr)
         }
 
         // try to enqueue the frame
-        return FIFO_put(&dpt.appli_fifo, fr);
+        return fifo_put(&dpt.appli_fifo, fr);
 }
 
 
-void dpt_set_sl_addr(u8 addr)
+void scalp_dpt_sl_addr_set(u8 addr)
 {
         // save slave address
         dpt.sl_addr = addr;
 
         // set slave address at TWI level
-        TWI_set_sl_addr(addr);
+        twi_sl_addr_set(addr);
 }
 
 
-void dpt_gen_call(u8 flag)
+void scalp_dpt_gen_call(u8 flag)
 {
         // just set the general call recognition mode
-        TWI_gen_call(flag);
+        twi_gen_call(flag);
 }

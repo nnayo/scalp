@@ -1,7 +1,7 @@
 // GPL v3 : copyright Yann GOUY
 //
 //
-// BASIC : goal and description
+// BASIC (BSC) : goal and description
 //
 // this package provides basic services :
 //
@@ -13,11 +13,8 @@
 //
 
 
-#ifndef __BASIC_H__
-#define __BASIC_H__
-
-
-#include "fr_cmdes.h"
+#ifndef __SCALP_BASIC_H__
+#define __SCALP_BASIC_H__
 
 //----------------------------------------
 // public defines
@@ -33,9 +30,9 @@
 //
 
 // basic module initialization
-extern void BSC_init(void);
+extern void scalp_bsc_init(void);
 
 // basic module computing function
-extern void BSC_run(void);
+extern void scalp_bsc_run(void);
 
-#endif	// __BASIC_H__
+#endif	// __SCALP_BASIC_H__

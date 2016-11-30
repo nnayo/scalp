@@ -13,14 +13,14 @@ each frame are composed of :
     - argument #5 field     offset + 10
 """
 
-class FrameError(Exception):
+class ScalpError(Exception):
     """basic exception for frame class"""
     pass
 
 
-# Frame base class
+# Scalp base class
 #
-class Frame(object):
+class Scalp(object):
     """base for all frame classes"""
     # I2C addresses
     I2C_BROADCAST_ADDR = 0x00
@@ -33,8 +33,6 @@ class Frame(object):
     ERROR = 0x80
     RESP = 0x40
     TIME_OUT = 0x20
-    ETH = 0x10
-    SERIAL = 0x08
     CMD = 0x00
     CMD_MASK = 0xf8
     LEN_MASK = 0x07
@@ -52,13 +50,13 @@ class Frame(object):
         self.dest = dest
         self.orig = orig
         if t_id is None:
-            self.t_id = Frame.t_id
-            Frame.t_id += 1
+            self.t_id = Scalp.t_id
+            Scalp.t_id += 1
         else:
             self.t_id = t_id
         self.stat = status
-        if len(argv) > Frame.nb_args:
-            raise FrameError('too many args: %d > %d' % (len(argv), Frame.nb_args))
+        if len(argv) > Scalp.nb_args:
+            raise ScalpError('too many args: %d > %d' % (len(argv), Scalp.nb_args))
         self.argv = argv[0]
 
         self._argv_decode()
@@ -67,25 +65,25 @@ class Frame(object):
         """
         return the frame length in bytes
         """
-        return 5 + Frame.nb_args
+        return 5 + Scalp.nb_args
 
     def response_set(self):
-        self.stat |= Frame.RESP
+        self.stat |= Scalp.RESP
 
     def response_unset(self):
-        self.stat &= ~Frame.RESP
+        self.stat &= ~Scalp.RESP
 
     def error_set(self):
-        self.stat |= Frame.ERROR
+        self.stat |= Scalp.ERROR
 
     def error_unset(self):
-        self.stat &= ~Frame.ERROR
+        self.stat &= ~Scalp.ERROR
 
     def time_out_set(self):
-        self.stat |= Frame.TIME_OUT
+        self.stat |= Scalp.TIME_OUT
 
     def time_out_unset(self):
-        self.stat &= ~Frame.TIME_OUT
+        self.stat &= ~Scalp.TIME_OUT
 
     def from_bytes(self, list):
         """
@@ -116,7 +114,7 @@ class Frame(object):
         self.cmde = ord(s[3])
         self.stat = ord(s[4])
         self.argv = []
-        for i in range(Frame.nb_args):
+        for i in range(Scalp.nb_args):
             self.argv.append(ord(s[5 + i]))
 
     def to_string(self):
@@ -128,7 +126,7 @@ class Frame(object):
             for c in self.to_bytes():
                 st += chr(c)
         except:
-            raise FrameError('%r' % self)
+            raise ScalpError('%r' % self)
 
         return st
 
@@ -149,9 +147,9 @@ class Frame(object):
 
     @staticmethod
     def _addr_str(addr):
-        if addr == Frame.I2C_BROADCAST_ADDR:
+        if addr == Scalp.I2C_BROADCAST_ADDR:
             return 'bcst'
-        if addr == Frame.I2C_SELF_ADDR:
+        if addr == Scalp.I2C_SELF_ADDR:
             return 'self'
         if addr is None:
             return 'None'
@@ -170,29 +168,21 @@ class Frame(object):
     def _status_str(self):
         st = ''
 
-        cmd = self.stat & Frame.CMD_MASK
-        if cmd & Frame.RESP:
+        cmd = self.stat & Scalp.CMD_MASK
+        if cmd & Scalp.RESP:
             st += 'r'
         else:
             st += 'c'
-        if cmd & Frame.ERROR:
+        if cmd & Scalp.ERROR:
             st += 'e'
         else:
             st += '_'
-        if cmd & Frame.TIME_OUT:
+        if cmd & Scalp.TIME_OUT:
             st += 't'
         else:
             st += '_'
-        if cmd & Frame.SERIAL:
-            st += 's'
-        else:
-            st += '_'
-        if cmd & Frame.ETH:
-            st += 'n'
-        else:
-            st += '_'
 
-        st += '%d' % (self.stat & Frame.LEN_MASK)
+        st += '%d' % (self.stat & Scalp.LEN_MASK)
 
         return st
 
