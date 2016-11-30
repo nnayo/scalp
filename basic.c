@@ -21,6 +21,8 @@
 
 #include "basic.h"
 
+#include "scalp.h"
+
 #include "dispatcher.h"
 
 #include <avr/pgmspace.h>
@@ -49,30 +51,30 @@
 //
 
 static struct {
-	dpt_interface_t interf;				// dispatcher interface
+	struct scalp_dpt_interface interf;				// dispatcher interface
 	u32	time_out;
 
 	// for incoming frames
 	pt_t	in_pt;						// context
-	fifo_t	in_fifo;					// fifo
-	frame_t in_buf[NB_IN_FRAMES];		// buffer
-	frame_t in;
+	struct fifo	in_fifo;					// fifo
+	struct scalp in_buf[NB_IN_FRAMES];		// buffer
+	struct scalp in;
 
 	// for response frames
 	pt_t	out_pt;						// context
-	fifo_t	out_fifo;					// fifo
-	frame_t out_buf[NB_OUT_FRAMES];		// buffer
-	frame_t out;
+	struct fifo	out_fifo;					// fifo
+	struct scalp out_buf[NB_OUT_FRAMES];		// buffer
+	struct scalp out;
 
 	// for frame handling
 	pt_t	handling_pt;				// context
-	frame_t resp;						// response frame
-	frame_t cont;						// contained frame
+	struct scalp resp;						// response frame
+	struct scalp cont;						// contained frame
 	u8 i;								// container index
 	u16* addr;							// address for read and write
 	u16 data;							// read or written data
 	u8 is_running:1;					// TRUE while processing a frame
-} BSC;
+} bsc;
 
 
 //----------------------------------------
@@ -81,109 +83,107 @@ static struct {
 
 // frame handling
 //static
-PT_THREAD(BSC_frame_handling(pt_t* pt))
+PT_THREAD(bsc_frame_handling(pt_t* pt))
 {
 	u32 time, delay;
 
 	PT_BEGIN(pt);
 
-	BSC.data = 0;
-	BSC.is_running = TRUE;
+	bsc.data = 0;
+	bsc.is_running = TRUE;
 
 	// if receiving a response or an error frame
-	if ( BSC.in.resp || BSC.in.error ) {
+	if ( bsc.in.resp || bsc.in.error ) {
 		// ignore it
-		BSC.is_running = FALSE;
+		bsc.is_running = FALSE;
 		PT_EXIT(pt);
 	}
 
 	// build response frame
-	BSC.resp.dest = BSC.in.orig;
-	BSC.resp.orig = BSC.in.dest;
-	BSC.resp.t_id = BSC.in.t_id;
-	BSC.resp.resp = 1;
-	BSC.resp.error = BSC.in.error;
-	BSC.resp.cmde = BSC.in.cmde;
-	BSC.resp.eth = BSC.in.eth;
-	BSC.resp.serial = BSC.in.serial;
-	BSC.resp.argv[0] = BSC.in.argv[0];
-	BSC.resp.argv[1] = BSC.in.argv[1];
-	BSC.resp.argv[2] = BSC.in.argv[2];
-	BSC.resp.argv[3] = BSC.in.argv[3];
-	BSC.resp.argv[4] = BSC.in.argv[4];
-	BSC.resp.argv[5] = BSC.in.argv[5];
+	bsc.resp.dest = bsc.in.orig;
+	bsc.resp.orig = bsc.in.dest;
+	bsc.resp.t_id = bsc.in.t_id;
+	bsc.resp.resp = 1;
+	bsc.resp.error = bsc.in.error;
+	bsc.resp.cmde = bsc.in.cmde;
+	bsc.resp.argv[0] = bsc.in.argv[0];
+	bsc.resp.argv[1] = bsc.in.argv[1];
+	bsc.resp.argv[2] = bsc.in.argv[2];
+	bsc.resp.argv[3] = bsc.in.argv[3];
+	bsc.resp.argv[4] = bsc.in.argv[4];
+	bsc.resp.argv[5] = bsc.in.argv[5];
 
 	// extract address (in most frames, the 2 first argv are an u16)
-	BSC.addr = (u16*)( (u16)(BSC.in.argv[0] << 8) + BSC.in.argv[1] );
+	bsc.addr = (u16*)( (u16)(bsc.in.argv[0] << 8) + bsc.in.argv[1] );
 
-	switch (BSC.in.cmde) {
-	case FR_NO_CMDE:
+	switch (bsc.in.cmde) {
+	case SCALP_NULL:
 		// nothing to do
 		break;
 
-	case FR_RAM_READ:
+	case SCALP_RAMREAD:
 		// read data
-		BSC.data = *BSC.addr;
-		BSC.resp.argv[2] = (BSC.data & 0xff00) >> 8;
-		BSC.resp.argv[3] = (BSC.data & 0x00ff) >> 0;
+		bsc.data = *bsc.addr;
+		bsc.resp.argv[2] = (bsc.data & 0xff00) >> 8;
+		bsc.resp.argv[3] = (bsc.data & 0x00ff) >> 0;
 
 		break;
 
-	case FR_RAM_WRITE:
+	case SCALP_RAMWRITE:
 		// extract data
-		BSC.data = (BSC.in.argv[2] << 8) + BSC.in.argv[3];
+		bsc.data = (bsc.in.argv[2] << 8) + bsc.in.argv[3];
 
 		// write data
-		*BSC.addr = BSC.data;
+		*bsc.addr = bsc.data;
 
 		// read back data
-		BSC.data = *BSC.addr;
-		BSC.resp.argv[2] = (BSC.data & 0xff00) >> 8;
-		BSC.resp.argv[3] = (BSC.data & 0x00ff) >> 0;
+		bsc.data = *bsc.addr;
+		bsc.resp.argv[2] = (bsc.data & 0xff00) >> 8;
+		bsc.resp.argv[3] = (bsc.data & 0x00ff) >> 0;
 		break;
 
-	case FR_EEP_READ:
+	case SCALP_EEPREAD:
 		// read data
-		EEP_read((u16)BSC.addr, (u8*)&BSC.data, sizeof(u16));
+		eep_read((u16)bsc.addr, (u8*)&bsc.data, sizeof(u16));
 
 		// wait until reading is done
-		PT_WAIT_UNTIL(pt, EEP_is_fini());
+		PT_WAIT_UNTIL(pt, eep_is_fini());
 
-		BSC.resp.argv[2] = (BSC.data & 0xff00) >> 8;
-		BSC.resp.argv[3] = (BSC.data & 0x00ff) >> 0;
+		bsc.resp.argv[2] = (bsc.data & 0xff00) >> 8;
+		bsc.resp.argv[3] = (bsc.data & 0x00ff) >> 0;
 		break;
 
-	case FR_EEP_WRITE:
+	case SCALP_EEPWRITE:
 		// extract data
-		BSC.data = (BSC.in.argv[2] << 8) + BSC.in.argv[3];
+		bsc.data = (bsc.in.argv[2] << 8) + bsc.in.argv[3];
 
 		// write data
-		EEP_write((u16)BSC.addr, (u8*)&BSC.data, sizeof(u16));
+		eep_write((u16)bsc.addr, (u8*)&bsc.data, sizeof(u16));
 
 		// wait until writing is done
-		PT_WAIT_UNTIL(pt, EEP_is_fini());
+		PT_WAIT_UNTIL(pt, eep_is_fini());
 
 		// read back data
-		EEP_read((u16)BSC.addr, (u8*)&BSC.data, sizeof(u16));
+		eep_read((u16)bsc.addr, (u8*)&bsc.data, sizeof(u16));
 
 		// wait until reading is done
-		PT_WAIT_UNTIL(pt, EEP_is_fini());
+		PT_WAIT_UNTIL(pt, eep_is_fini());
 
-		BSC.resp.argv[2] = (BSC.data & 0xff00) >> 8;
-		BSC.resp.argv[3] = (BSC.data & 0x00ff) >> 0;
+		bsc.resp.argv[2] = (bsc.data & 0xff00) >> 8;
+		bsc.resp.argv[3] = (bsc.data & 0x00ff) >> 0;
 		break;
 
-	case FR_FLH_READ:
+	case SCALP_FLHREAD:
 		// read data
-		BSC.data = pgm_read_word((u16)BSC.addr);
-		BSC.resp.argv[2] = (BSC.data & 0xff00) >> 8;
-		BSC.resp.argv[3] = (BSC.data & 0x00ff) >> 0;
+		bsc.data = pgm_read_word((u16)bsc.addr);
+		bsc.resp.argv[2] = (bsc.data & 0xff00) >> 8;
+		bsc.resp.argv[3] = (bsc.data & 0x00ff) >> 0;
 		break;
 
-	case FR_FLH_WRITE:
+	case SCALP_FLHWRITE:
 		// TODO : difficult to handle correctly
 		// right now, skip it by answering an error
-		BSC.resp.error = 1;
+		bsc.resp.error = 1;
 
 		// extract address
 		// write data
@@ -191,107 +191,107 @@ PT_THREAD(BSC_frame_handling(pt_t* pt))
 		// set response frame arguments
 		break;
 
-//	case FR_SPI_READ:
+//	case SCALP_SPI_READ:
 //		// only read data
-//		SPI_master(NULL, 0, BSC.resp.argv, BSC.in.len);
+//		SPI_master(NULL, 0, bsc.resp.argv, bsc.in.len);
 //
 //		// wait until reading is done
 //		PT_WAIT_UNTIL(pt, SPI_is_fini());
 //
 //		// check the transfer
-//		BSC.resp.error = SPI_is_ok();
+//		bsc.resp.error = SPI_is_ok();
 //		break;
 //
-//	case FR_SPI_WRITE:
+//	case SCALP_SPI_WRITE:
 //		// only write data
-//		SPI_master(BSC.in.argv, BSC.in.len, NULL, 0);
+//		SPI_master(bsc.in.argv, bsc.in.len, NULL, 0);
 //
 //		// wait until writing is done
 //		PT_WAIT_UNTIL(pt, SPI_is_fini());
 //
 //		// check the transfer
-//		BSC.resp.error = SPI_is_ok();
+//		bsc.resp.error = SPI_is_ok();
 //		break;
 
-	case FR_WAIT:
+	case SCALP_WAIT:
 		// get current time
-		time = TIME_get();
+		time = time_get();
 
 		// compute time at end of delay
-		delay = (u16)BSC.addr;
+		delay = (u16)bsc.addr;
 		delay *= TIME_1_MSEC;
 		delay += time;
-		BSC.time_out = delay;
+		bsc.time_out = delay;
 
 		break;
 
-	case FR_CONTAINER:
+	case SCALP_CONTAINER:
 		// container frames can hold other containers
 		// even if this seems useless
 		// except perhaps for eeprom size optimization
 
 		// upon the memory storage zone
-		switch (BSC.in.argv[3]) {
-		case EEPROM_STORAGE:
+		switch (bsc.in.argv[3]) {
+		case SCALP_CONT_EEPROM_STORAGE:
 			// for each frame in the container
-			for ( BSC.i = 0; BSC.i < BSC.in.argv[2]; BSC.i++) {
+			for ( bsc.i = 0; bsc.i < bsc.in.argv[2]; bsc.i++) {
 				// extract the frames from EEPROM
-				EEP_read((u16)((u8*)BSC.addr + BSC.i * sizeof(frame_t)), (u8*)&BSC.cont, sizeof(frame_t));
+				eep_read((u16)((u8*)bsc.addr + bsc.i * sizeof(struct scalp)), (u8*)&bsc.cont, sizeof(struct scalp));
 
 				// wait until reading is done
-				PT_WAIT_UNTIL(pt, EEP_is_fini());
+				PT_WAIT_UNTIL(pt, eep_is_fini());
 
 				// enqueue the contained frame
-				PT_WAIT_UNTIL(pt, FIFO_put(&BSC.out_fifo, &BSC.cont));
+				PT_WAIT_UNTIL(pt, fifo_put(&bsc.out_fifo, &bsc.cont));
 			}
 			break;
 
-		case RAM_STORAGE:
+		case SCALP_CONT_RAM_STORAGE:
 			// for each frame in the container
-			for ( BSC.i = 0; BSC.i < BSC.in.argv[2]; BSC.i++) {
+			for ( bsc.i = 0; bsc.i < bsc.in.argv[2]; bsc.i++) {
 				// read the frame from RAM
-				BSC.cont = *((frame_t *)((u8*)BSC.addr + BSC.i * sizeof(frame_t)));
+				bsc.cont = *((struct scalp *)((u8*)bsc.addr + bsc.i * sizeof(struct scalp)));
 
 				// enqueue the contained frame
-				PT_WAIT_UNTIL(pt, FIFO_put(&BSC.out_fifo, &BSC.cont));
+				PT_WAIT_UNTIL(pt, fifo_put(&bsc.out_fifo, &bsc.cont));
 			}
 			break;
 
-		case FLASH_STORAGE:
+		case SCALP_CONT_FLASH_STORAGE:
 			// for each frame in the container
-			for ( BSC.i = 0; BSC.i < BSC.in.argv[2]; BSC.i++) {
+			for ( bsc.i = 0; bsc.i < bsc.in.argv[2]; bsc.i++) {
 				// extract the frame from FLASH
-				memcpy_P(&BSC.cont, (const void *)((u8*)BSC.addr + BSC.i * sizeof(frame_t)), sizeof(frame_t));
+				memcpy_P(&bsc.cont, (const void *)((u8*)bsc.addr + bsc.i * sizeof(struct scalp)), sizeof(struct scalp));
 
 				// enqueue the contained frame
-				PT_WAIT_UNTIL(pt, FIFO_put(&BSC.out_fifo, &BSC.cont));
+				PT_WAIT_UNTIL(pt, fifo_put(&bsc.out_fifo, &bsc.cont));
 			}
 			break;
 
-		case PRE_0_STORAGE:
-		case PRE_1_STORAGE:
-		case PRE_2_STORAGE:
-		case PRE_3_STORAGE:
-		case PRE_4_STORAGE:
-		case PRE_5_STORAGE:
-		case PRE_6_STORAGE:
-		case PRE_7_STORAGE:
-		case PRE_8_STORAGE:
-		case PRE_9_STORAGE:
+		case SCALP_CONT_PRE_0_STORAGE:
+		case SCALP_CONT_PRE_1_STORAGE:
+		case SCALP_CONT_PRE_2_STORAGE:
+		case SCALP_CONT_PRE_3_STORAGE:
+		case SCALP_CONT_PRE_4_STORAGE:
+		case SCALP_CONT_PRE_5_STORAGE:
+		case SCALP_CONT_PRE_6_STORAGE:
+		case SCALP_CONT_PRE_7_STORAGE:
+		case SCALP_CONT_PRE_8_STORAGE:
+		case SCALP_CONT_PRE_9_STORAGE:
 			// extract the frame from EEPROM
-                        BSC.addr = (u16*)(BSC.in.argv[3] * sizeof(frame_t));
-			EEP_read((u16)((u8*)BSC.addr), (u8*)&BSC.cont, sizeof(frame_t));
+                        bsc.addr = (u16*)(bsc.in.argv[3] * sizeof(struct scalp));
+			eep_read((u16)((u8*)bsc.addr), (u8*)&bsc.cont, sizeof(struct scalp));
 
 			// wait until reading is done
-			PT_WAIT_UNTIL(pt, EEP_is_fini());
+			PT_WAIT_UNTIL(pt, eep_is_fini());
 
 			// enqueue the contained frame
-			PT_WAIT_UNTIL(pt, FIFO_put(&BSC.out_fifo, &BSC.cont));
+			PT_WAIT_UNTIL(pt, fifo_put(&bsc.out_fifo, &bsc.cont));
 			break;
 
 		default:
 			// frame format is invalid
-			BSC.resp.error = 1;
+			bsc.resp.error = 1;
 			break;
 		}
 
@@ -300,40 +300,40 @@ PT_THREAD(BSC_frame_handling(pt_t* pt))
 	default:
 		// should never happen
 		// and in this case, ignore frame
-		BSC.is_running = FALSE;
+		bsc.is_running = FALSE;
 		//PT_RESTART(pt);
 		PT_EXIT(pt);
 		break;
 	}
 
 	// enqueue response
-	PT_WAIT_UNTIL(pt, FIFO_put(&BSC.out_fifo, &BSC.resp));
+	PT_WAIT_UNTIL(pt, fifo_put(&bsc.out_fifo, &bsc.resp));
 
 	// let's process the next frame
-	BSC.is_running = FALSE;
+	bsc.is_running = FALSE;
 	PT_EXIT(pt);
 
 	PT_END(pt);
 }
 
 
-PT_THREAD(BSC_in(pt_t* pt))
+PT_THREAD(bsc_in(pt_t* pt))
 {
 	PT_BEGIN(pt);
 
 	// dequeue the incomed frame if any
-	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.in_fifo, &BSC.in));
+	PT_WAIT_WHILE(pt, KO == fifo_get(&bsc.in_fifo, &bsc.in));
 
 	// frame interpretation
-	PT_SPAWN(pt, &BSC.handling_pt, BSC_frame_handling(&BSC.handling_pt));
+	PT_SPAWN(pt, &bsc.handling_pt, bsc_frame_handling(&bsc.handling_pt));
 
 	// if the last handled frame was a wait one
 	// no other one will be treated before the time-out elapses
-	PT_WAIT_WHILE(pt, (0 != BSC.time_out) && (TIME_get() <= BSC.time_out));
+	PT_WAIT_WHILE(pt, (0 != bsc.time_out) && (time_get() <= bsc.time_out));
 
 	// reset time-out was elapsed
 	// this will unblock response sending
-	BSC.time_out = 0;
+	bsc.time_out = 0;
 
 	// let's process the next frame
 	PT_RESTART(pt);
@@ -342,22 +342,22 @@ PT_THREAD(BSC_in(pt_t* pt))
 }
 
 
-PT_THREAD(BSC_out(pt_t* pt))
+PT_THREAD(bsc_out(pt_t* pt))
 {
 	PT_BEGIN(pt);
 
 	// if the last handled frame was a wait one
 	// no other one will be sent before the time-out elapses
-	PT_WAIT_WHILE(pt, 0 != BSC.time_out);
+	PT_WAIT_WHILE(pt, 0 != bsc.time_out);
 
 	// dequeue the response frame if any
-	PT_WAIT_WHILE(pt, KO == FIFO_get(&BSC.out_fifo, &BSC.out));
+	PT_WAIT_WHILE(pt, KO == fifo_get(&bsc.out_fifo, &bsc.out));
 
 	// be sure the response is sent
-        dpt_lock(&BSC.interf);
-	if ( KO == dpt_tx(&BSC.interf, &BSC.out) ) {
+        scalp_dpt_lock(&bsc.interf);
+	if ( KO == scalp_dpt_tx(&bsc.interf, &bsc.out) ) {
 		// else requeue the frame
-		FIFO_unget(&BSC.out_fifo, &BSC.out);
+		fifo_unget(&bsc.out_fifo, &bsc.out);
 	}
 
 	// let's wait the next response
@@ -372,46 +372,48 @@ PT_THREAD(BSC_out(pt_t* pt))
 //
 
 // basic module initialization
-void BSC_init(void)
+void scapl_bsc_init(void)
 {
-	frame_t fr;
+	struct scalp fr;
 
 	// fifoes init
-	FIFO_init(&BSC.in_fifo, &BSC.in_buf, NB_IN_FRAMES, sizeof(frame_t));
-	FIFO_init(&BSC.out_fifo, &BSC.out_buf, NB_OUT_FRAMES, sizeof(frame_t));
+	fifo_init(&bsc.in_fifo, &bsc.in_buf, NB_IN_FRAMES, sizeof(struct scalp));
+	fifo_init(&bsc.out_fifo, &bsc.out_buf, NB_OUT_FRAMES, sizeof(struct scalp));
 
 	// thread init
-	PT_INIT(&BSC.in_pt);
-	PT_INIT(&BSC.out_pt);
+	PT_INIT(&bsc.in_pt);
+	PT_INIT(&bsc.out_pt);
 
 	// reset time-out
-	BSC.time_out = 0;
-	BSC.is_running = FALSE;
+	bsc.time_out = 0;
+	bsc.is_running = FALSE;
 
 	// register own call-back for specific commands
-	BSC.interf.channel = 0;
-	BSC.interf.cmde_mask = _CM(FR_NO_CMDE)
-				| _CM(FR_RAM_READ)
-				| _CM(FR_RAM_WRITE)
-				| _CM(FR_EEP_READ)
-				| _CM(FR_EEP_WRITE)
-				| _CM(FR_FLH_READ)
-				| _CM(FR_FLH_WRITE)
-//				| _CM(FR_SPI_READ)
-//				| _CM(FR_SPI_WRITE)
-				| _CM(FR_WAIT)
-				| _CM(FR_CONTAINER);
-	BSC.interf.queue = &BSC.in_fifo;
-	dpt_register(&BSC.interf);
+	bsc.interf.channel = 0;
+    bsc.interf.cmde_mask = 
+        _CM(SCALP_NULL)
+        | _CM(SCALP_RAMREAD)
+        | _CM(SCALP_RAMWRITE)
+        | _CM(SCALP_EEPREAD)
+        | _CM(SCALP_EEPWRITE)
+        | _CM(SCALP_FLHREAD)
+        | _CM(SCALP_FLHWRITE)
+        //				| _CM(SCALP_SPI_READ)
+        //				| _CM(SCALP_SPI_WRITE)
+        | _CM(SCALP_WAIT)
+        | _CM(SCALP_CONTAINER);
+
+	bsc.interf.queue = &bsc.in_fifo;
+	scalp_dpt_register(&bsc.interf);
 
 	// drivers init
-	SLP_init();
-	EEP_init();
+	slp_init();
+	eep_init();
 	//SPI_init(SPI_MASTER, SPI_THREE, SPI_MSB, SPI_DIV_16);
 
 	// read reset frame
-	EEP_read(0x00, (u8*)&fr, sizeof(frame_t));
-	while ( ! EEP_is_fini() )
+	eep_read(0x00, (u8*)&fr, sizeof(struct scalp));
+	while ( ! eep_is_fini() )
 		;
 
 	// check if the frame is valid
@@ -420,24 +422,24 @@ void BSC_init(void)
 	}
 
 	// enqueue the reset frame
-	FIFO_put(&BSC.out_fifo, &fr);
+	fifo_put(&bsc.out_fifo, &fr);
 
 	// lock the dispatcher to be able to treat the frame
-	dpt_lock(&BSC.interf);
+	scalp_dpt_lock(&bsc.interf);
 }
 
 
-void BSC_run(void)
+void scapl_bsc_run(void)
 {
 	// incoming frames handling
-	(void)PT_SCHEDULE(BSC_in(&BSC.in_pt));
+	(void)PT_SCHEDULE(bsc_in(&bsc.in_pt));
 
 	// reponse frames handling
-	(void)PT_SCHEDULE(BSC_out(&BSC.out_pt));
+	(void)PT_SCHEDULE(bsc_out(&bsc.out_pt));
 
 	// if all frames are handled
-	if ( !BSC.is_running && ( FIFO_full(&BSC.out_fifo) == 0 ) && ( FIFO_full(&BSC.in_fifo) == 0 ) ) {
+	if ( !bsc.is_running && ( fifo_full(&bsc.out_fifo) == 0 ) && ( fifo_full(&bsc.in_fifo) == 0 ) ) {
 		// unlock the dispatcher
-		dpt_unlock(&BSC.interf);
+		scalp_dpt_unlock(&bsc.interf);
 	}
 }

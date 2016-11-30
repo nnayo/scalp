@@ -1,16 +1,16 @@
 import os
 
-MCU_TARGET      = 'atmega328p'
-OPTIMIZE        = '-Os -mcall-prologues -fshort-enums '
-includes	= ['.', os.environ['TROLL_PROJECTS'] + '/nanoK']
-CFLAGS		= '-g -Wall -Wextra ' + OPTIMIZE + '-mmcu=' + MCU_TARGET
+MCU_TARGET = 'atmega328p'
+OPTIMIZE = '-Os -mcall-prologues -fshort-enums '
+includes = ['.', os.environ['TROLL_PROJECTS'] + '/nanoK']
+CFLAGS = '-g -Wall -Wextra ' + OPTIMIZE + '-mmcu=' + MCU_TARGET
 
 env = Environment(
-	ENV = os.environ,       \
-	CC = 'avr-gcc',		\
-	AR = 'avr-ar',		\
-	CFLAGS = CFLAGS,	\
-	CPPPATH = includes,	\
+    ENV = os.environ,
+    CC = 'avr-gcc',
+    AR = 'avr-ar',
+    CFLAGS = CFLAGS,
+    CPPPATH = includes,
 )
 
 Export('env')

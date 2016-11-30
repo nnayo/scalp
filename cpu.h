@@ -1,8 +1,10 @@
 #ifndef _CPU_H_
 # define _CPU_H_
 
+// CPU load measurment
+
 // module standard interface
-extern void CPU_init(void);
-extern void CPU_run(void);
+void cpu_init(void);
+void cpu_run(void);
 
 #endif

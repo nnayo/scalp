@@ -35,10 +35,10 @@
 //
 
 // ALIVE module initialization
-extern void ALV_init(void);
+extern void scalp_alive_init(void);
 
 // ALIVE module run method
-extern void ALV_run(void);
+extern void scalp_alive_run(void);
 
 
 #endif	// __ALIVE_H__

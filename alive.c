@@ -48,12 +48,12 @@
 //
 
 static struct {
-	dpt_interface_t interf;		// dispatcher interface
+	struct scalp_dpt_interface interf;		// dispatcher interface
 
 	pt_t rx_pt;					// rx context
 	pt_t tx_pt;					// tx context
 
-	frame_t fr;					// a buffer frame
+	struct scalp fr;					// a buffer scalp
 
 	s8 volatile anti_bounce;	// anti-bounce counter
 	u8 trigger;					// signal if the action has already happened
@@ -64,16 +64,16 @@ static struct {
 
 	u32 time_out;				// time-out for scan request sending
 
-	frame_t buf[QUEUE_SIZE];
-	fifo_t in_fifo;				// reception queue
-} ALV;
+	struct scalp buf[QUEUE_SIZE];
+	struct fifo in_fifo;				// reception queue
+} alive;
 
 
 //----------------------------------------
 // private functions
 //
 
-static u8 ALV_nodes_addresses(void)
+static u8 scalp_alive_nodes_addresses(void)
 {
 	dna_list_t* list;
 	u8 nb_is;
@@ -91,7 +91,7 @@ static u8 ALV_nodes_addresses(void)
 			( list[i].i2c_addr != DNA_SELF_ADDR(list)) ) {
 			// an other minuterie is found
 			// save its address
-			ALV.mnt_addr[nb] = list[i].i2c_addr;
+			alive.mnt_addr[nb] = list[i].i2c_addr;
 
 			// increment nb of found minuteries in this scan
 			nb++;
@@ -99,48 +99,48 @@ static u8 ALV_nodes_addresses(void)
 	}
 
 	// finally save the number of found minuteries
-	ALV.nb_mnt = nb;
+	alive.nb_mnt = nb;
 
 	// return the current node address
 	return DNA_SELF_ADDR(list);
 }
 
 
-static u8 ALV_next_address(void)
+static u8 scalp_alive_next_address(void)
 {
 	u8 addr;
 
 	// if no other minuterie is visible
-	if ( ALV.nb_mnt == 0 ) {
+	if ( alive.nb_mnt == 0 ) {
 		// return an invalid address (it is in the range of the BS)
 		return DPT_LAST_ADDR;
 	}
 
 	// so at least 1 other minuterie is declared
 	// ensure the current MNT index is valid
-	ALV.cur_mnt %= ALV.nb_mnt;
+	alive.cur_mnt %= alive.nb_mnt;
 
 	// retrieve its address
-	addr = ALV.mnt_addr[ALV.cur_mnt];
+	addr = alive.mnt_addr[alive.cur_mnt];
 
 	// finally prepare the access to the next minuterie
-	ALV.cur_mnt++;
+	alive.cur_mnt++;
 
 	// return the computed address
 	return addr;
 }
 
 
-static PT_THREAD( ALV_rx(pt_t* pt) )
+static PT_THREAD( scalp_alive_rx(pt_t* pt) )
 {
-	frame_t fr;
+	struct scalp fr;
 
 	PT_BEGIN(pt);
 
-	PT_WAIT_UNTIL(pt, FIFO_get(&ALV.in_fifo, &fr));
+	PT_WAIT_UNTIL(pt, fifo_get(&alive.in_fifo, &fr));
 
 	// if not the response from current status request
-	if ( !fr.resp || (fr.t_id != ALV.fr.t_id) ) {
+	if ( !fr.resp || (fr.t_id != alive.fr.t_id) ) {
 		// throw it away
 		PT_RESTART(pt);
 	}
@@ -148,11 +148,11 @@ static PT_THREAD( ALV_rx(pt_t* pt) )
 	// if response is not in error
 	if ( !fr.error ) {
 		// increase number of successes
-		ALV.anti_bounce++;
+		alive.anti_bounce++;
 
 		// prevent overflow
-		if ( ALV.anti_bounce > ALV_ANTI_BOUNCE_UPPER_LIMIT ) {
-			ALV.anti_bounce = ALV_ANTI_BOUNCE_UPPER_LIMIT;
+		if ( alive.anti_bounce > ALV_ANTI_BOUNCE_UPPER_LIMIT ) {
+			alive.anti_bounce = ALV_ANTI_BOUNCE_UPPER_LIMIT;
 		}
 	}
 
@@ -163,90 +163,90 @@ static PT_THREAD( ALV_rx(pt_t* pt) )
 }
 
 
-static PT_THREAD( ALV_tx(pt_t* pt) )
+static PT_THREAD( scalp_alive_tx(pt_t* pt) )
 {
 	u8 self_addr;
 
 	PT_BEGIN(pt);
 
 	// every second
-	PT_WAIT_UNTIL(pt, TIME_get() > ALV.time_out);
+	PT_WAIT_UNTIL(pt, time_get() > alive.time_out);
 
 	// update time-out
-	ALV.time_out += ALV_TIME_INTERVAL;
+	alive.time_out += ALV_TIME_INTERVAL;
 
 	// extract visible other minuteries addresses
-	self_addr = ALV_nodes_addresses();
+	self_addr = scalp_alive_nodes_addresses();
 
 	// if another minuterie is visible
-	if ( ALV.nb_mnt != 0 ) {
+	if ( alive.nb_mnt != 0 ) {
 		// build the get state request
-		ALV.fr.orig = self_addr;
-		ALV.fr.dest = ALV_next_address();
-		ALV.fr.resp = 0;
-		ALV.fr.error = 0;
-		//ALV.fr.nat = 0;
-		ALV.fr.cmde = FR_STATE;
-		ALV.fr.argv[0] = 0x00;
+		alive.fr.orig = self_addr;
+		alive.fr.dest = scalp_alive_next_address();
+		alive.fr.resp = 0;
+		alive.fr.error = 0;
+		//alive.fr.nat = 0;
+		alive.fr.cmde = SCALP_STATE;
+		alive.fr.argv[0] = 0x00;
 
 		// send the status request
-		dpt_lock(&ALV.interf);
-		PT_WAIT_UNTIL(pt, OK == dpt_tx(&ALV.interf, &ALV.fr));
-		dpt_unlock(&ALV.interf);
+		scalp_dpt_lock(&alive.interf);
+		PT_WAIT_UNTIL(pt, OK == scalp_dpt_tx(&alive.interf, &alive.fr));
+		scalp_dpt_unlock(&alive.interf);
 	}
 	else {
 		// one more failure
-		ALV.anti_bounce--;
+		alive.anti_bounce--;
 
 		// prevent underflow
-		if ( ALV.anti_bounce < ALV_ANTI_BOUNCE_LOWER_LIMIT ) {
-			ALV.anti_bounce = ALV_ANTI_BOUNCE_LOWER_LIMIT;
+		if ( alive.anti_bounce < ALV_ANTI_BOUNCE_LOWER_LIMIT ) {
+			alive.anti_bounce = ALV_ANTI_BOUNCE_LOWER_LIMIT;
 		}
 	}
 
 	// when there are too many failures
-	if ( (ALV.anti_bounce == ALV_ANTI_BOUNCE_LOWER_LIMIT) && !(ALV.trigger & ALV_LOWER_TRIGGER) ) {
+	if ( (alive.anti_bounce == ALV_ANTI_BOUNCE_LOWER_LIMIT) && !(alive.trigger & ALV_LOWER_TRIGGER) ) {
 		// then set the mode to autonomous
-		ALV.fr.orig = DPT_SELF_ADDR;
-		ALV.fr.dest = DPT_SELF_ADDR;
-		ALV.fr.resp = 0;
-		ALV.fr.error = 0;
-		//ALV.fr.nat = 0;
-		ALV.fr.cmde = FR_RECONF_MODE;
-		ALV.fr.argv[0] = 0x00;
-		ALV.fr.argv[1] = 0x02;		// no bus active
+		alive.fr.orig = DPT_SELF_ADDR;
+		alive.fr.dest = DPT_SELF_ADDR;
+		alive.fr.resp = 0;
+		alive.fr.error = 0;
+		//alive.fr.nat = 0;
+		alive.fr.cmde = SCALP_RECONF;
+		alive.fr.argv[0] = 0x00;
+		alive.fr.argv[1] = 0x02;		// no bus active
 
-		dpt_lock(&ALV.interf);
-		PT_WAIT_UNTIL(pt, OK == dpt_tx(&ALV.interf, &ALV.fr));
-		dpt_unlock(&ALV.interf);
+		scalp_dpt_lock(&alive.interf);
+		PT_WAIT_UNTIL(pt, OK == scalp_dpt_tx(&alive.interf, &alive.fr));
+		scalp_dpt_unlock(&alive.interf);
 
 		// prevent any further lower trigger action
-		ALV.trigger |= ALV_LOWER_TRIGGER;
+		alive.trigger |= ALV_LOWER_TRIGGER;
 
 		// but allow upper trigger action
-		ALV.trigger &= ~ALV_UPPER_TRIGGER;
+		alive.trigger &= ~ALV_UPPER_TRIGGER;
 	}
 
-	if ( (ALV.anti_bounce == ALV_ANTI_BOUNCE_UPPER_LIMIT) && !(ALV.trigger & ALV_UPPER_TRIGGER) ) {
+	if ( (alive.anti_bounce == ALV_ANTI_BOUNCE_UPPER_LIMIT) && !(alive.trigger & ALV_UPPER_TRIGGER) ) {
 		// then set the mode to autonomous
-		ALV.fr.orig = DPT_SELF_ADDR;
-		ALV.fr.dest = DPT_SELF_ADDR;
-		ALV.fr.resp = 0;
-		ALV.fr.error = 0;
-		//ALV.fr.nat = 0;
-		ALV.fr.cmde = FR_RECONF_MODE;
-		ALV.fr.argv[0] = 0x00;
-		ALV.fr.argv[1] = 0x03;		// bus mode is automatic
+		alive.fr.orig = DPT_SELF_ADDR;
+		alive.fr.dest = DPT_SELF_ADDR;
+		alive.fr.resp = 0;
+		alive.fr.error = 0;
+		//alive.fr.nat = 0;
+		alive.fr.cmde = SCALP_RECONF;
+		alive.fr.argv[0] = 0x00;
+		alive.fr.argv[1] = 0x03;		// bus mode is automatic
 
-		dpt_lock(&ALV.interf);
-		PT_WAIT_UNTIL(pt, OK == dpt_tx(&ALV.interf, &ALV.fr));
-		dpt_unlock(&ALV.interf);
+		scalp_dpt_lock(&alive.interf);
+		PT_WAIT_UNTIL(pt, OK == scalp_dpt_tx(&alive.interf, &alive.fr));
+		scalp_dpt_unlock(&alive.interf);
 
 		// prevent any further upper trigger action
-		ALV.trigger |= ALV_UPPER_TRIGGER;
+		alive.trigger |= ALV_UPPER_TRIGGER;
 
 		// but allow lower trigger action
-		ALV.trigger &= ~ALV_LOWER_TRIGGER;
+		alive.trigger &= ~ALV_LOWER_TRIGGER;
 	}
 
 	// loop back
@@ -261,35 +261,35 @@ static PT_THREAD( ALV_tx(pt_t* pt) )
 //
 
 // ALIVE module initialization
-void ALV_init(void)
+void scalp_alive_init(void)
 {
 	// threads context init
-	PT_INIT(&ALV.rx_pt);
-	PT_INIT(&ALV.tx_pt);
+	PT_INIT(&alive.rx_pt);
+	PT_INIT(&alive.tx_pt);
 
 	// variables init
-	ALV.anti_bounce = 0;
-	ALV.trigger = 0x00;
-	ALV.nb_mnt = 0;
-	ALV.cur_mnt = 0;
-	ALV.time_out = ALV_TIME_INTERVAL;
+	alive.anti_bounce = 0;
+	alive.trigger = 0x00;
+	alive.nb_mnt = 0;
+	alive.cur_mnt = 0;
+	alive.time_out = ALV_TIME_INTERVAL;
 
-	FIFO_init(&ALV.in_fifo, &ALV.buf, QUEUE_SIZE, sizeof(ALV.buf[0]));
+	fifo_init(&alive.in_fifo, &alive.buf, QUEUE_SIZE, sizeof(alive.buf[0]));
 
 	// register own call-back for specific commands
-	ALV.interf.channel = 9;
-	ALV.interf.cmde_mask = _CM(FR_STATE);
-	ALV.interf.queue = &ALV.in_fifo;
-	dpt_register(&ALV.interf);
+	alive.interf.channel = 9;
+	alive.interf.cmde_mask = _CM(SCALP_STATE);
+	alive.interf.queue = &alive.in_fifo;
+	scalp_dpt_register(&alive.interf);
 }
 
 
 // ALIVE module run method
-void ALV_run(void)
+void scalp_alive_run(void)
 {
 	// handle response if any
-	(void)PT_SCHEDULE(ALV_rx(&ALV.rx_pt));
+	(void)PT_SCHEDULE(scalp_alive_rx(&alive.rx_pt));
 
 	// send response if any
-	(void)PT_SCHEDULE(ALV_tx(&ALV.tx_pt));
+	(void)PT_SCHEDULE(scalp_alive_tx(&alive.tx_pt));
 }

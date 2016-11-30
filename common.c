@@ -47,58 +47,58 @@
 // private structures
 //
 
-typedef struct led_t {
+struct led {
 	u8 lo;					// low level duration in 10 ms
 	u8 hi;					// high level duration in 10 ms
 	u8 cnt;					// current counter
-} _led_t;
+};
 
 //----------------------------------------
 // private variables
 //
 
 static struct {
-	dpt_interface_t interf;		// dispatcher interface
+	struct scalp_dpt_interface interf;		// dispatcher interface
 
 	pt_t in_pt;					// reception thread context
 	pt_t out_pt;				// emission thread context
 	pt_t blink_pt;				// leds blinking thread context
 
-	struct led_t green_led, orange_led;	// led blinking condition
+	struct led green_led, orange_led;	// led blinking condition
 
 	u32 time;
 
 	// outgoing fifo
-	fifo_t out_fifo;
-	frame_t out_buf[OUT_SIZE];
+	struct fifo out_fifo;
+	struct scalp out_buf[OUT_SIZE];
 
 	// incoming fifo
-	fifo_t in_fifo;
-	frame_t in_buf[IN_SIZE];
+	struct fifo in_fifo;
+	struct scalp in_buf[IN_SIZE];
 
-	frame_t fr;					// a buffer frame
+	struct scalp fr;					// a buffer frame
 
-	cmn_state_t state;			// board state
-} CMN;
+	u8 state;			// board state
+} cmn;
 
 
 //----------------------------------------
 // private functions
 //
 
-static PT_THREAD( CMN_out(pt_t* pt) )
+static PT_THREAD( scalp_cmn_out(pt_t* pt) )
 {
-	frame_t fr;
+	struct scalp fr;
 	PT_BEGIN(pt);
 
 	// dequeue a response if any
-	PT_WAIT_UNTIL(pt, OK == FIFO_get(&CMN.out_fifo, &fr));
+	PT_WAIT_UNTIL(pt, OK == fifo_get(&cmn.out_fifo, &fr));
 
 	// make sure to send the response
-        dpt_lock(&CMN.interf);
-	if (KO == dpt_tx(&CMN.interf, &fr)) {
+        scalp_dpt_lock(&cmn.interf);
+	if (KO == scalp_dpt_tx(&cmn.interf, &fr)) {
 		// else requeue the frame
-		FIFO_unget(&CMN.out_fifo, &fr);
+		fifo_unget(&cmn.out_fifo, &fr);
 	}
 
 	// loop back
@@ -108,7 +108,7 @@ static PT_THREAD( CMN_out(pt_t* pt) )
 }
 
 
-static PT_THREAD( CMN_in(pt_t* pt) )
+static PT_THREAD( scalp_cmn_in(pt_t* pt) )
 {
 	union {
 		u8 part[4];
@@ -118,58 +118,58 @@ static PT_THREAD( CMN_in(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// wait incoming frame
-	PT_WAIT_UNTIL(pt, FIFO_get(&CMN.in_fifo, &CMN.fr));
+	PT_WAIT_UNTIL(pt, fifo_get(&cmn.in_fifo, &cmn.fr));
 
 	// if frame is a response
-	if (CMN.fr.resp) {
+	if (cmn.fr.resp) {
 		// ignore it
 		PT_RESTART(pt);
 	}
 
 	// update default response frame header
-	CMN.fr.resp = 1;
-	CMN.fr.error = 0;
+	cmn.fr.resp = 1;
+	cmn.fr.error = 0;
 
-	switch (CMN.fr.cmde) {
-	case FR_STATE:
-		switch (CMN.fr.argv[0]) {
-		case FR_STATE_GET:	// get state
+	switch (cmn.fr.cmde) {
+	case SCALP_STATE:
+		switch (cmn.fr.argv[0]) {
+		case SCALP_STAT_GET:	// get state
 			// build the frame with the node state
-			CMN.fr.argv[1] = CMN.state;
+			cmn.fr.argv[1] = cmn.state;
 			break;
 
-		case FR_STATE_SET:	// set state
+		case SCALP_STAT_SET:	// set state
 			// save new node state
-			CMN.state = CMN.fr.argv[1];
+			cmn.state = cmn.fr.argv[1];
 			break;
 
 		default:
-			CMN.fr.error = 1;
+			cmn.fr.error = 1;
 			break;
 		}
 		break;
 
-	case FR_TIME_GET:
+	case SCALP_TIME:
 		// get local time
-		time.full = TIME_get();
+		time.full = time_get();
 
 		// build frame
 		// (in AVR u32 representation is little endian)
-		CMN.fr.argv[0] = time.part[3];
-		CMN.fr.argv[1] = time.part[2];
-		CMN.fr.argv[2] = time.part[1];
-		CMN.fr.argv[3] = time.part[0];
+		cmn.fr.argv[0] = time.part[3];
+		cmn.fr.argv[1] = time.part[2];
+		cmn.fr.argv[2] = time.part[1];
+		cmn.fr.argv[3] = time.part[0];
 		break;
 
-	case FR_MUX_RESET:
-		switch (CMN.fr.argv[0]) {
-		case FR_MUX_RESET_RESET:
+	case SCALP_MUX:
+		switch (cmn.fr.argv[0]) {
+		case SCALP_MUX_RESET:
 			// reset PCA9543
 			// drive gate to 0
 			PORTD &= ~_BV(PD5);
 			break;
 
-		case FR_MUX_RESET_UNRESET:
+		case SCALP_MUX_UNRESET:
 			// release PCA9543 reset pin
 			// drive gate to 1
 			PORTD |= _BV(PD5);
@@ -177,66 +177,66 @@ static PT_THREAD( CMN_in(pt_t* pt) )
 
 		default:
 			// reject command
-			CMN.fr.error = 1;
+			cmn.fr.error = 1;
 			break;
 		}
 		break;
 
-	case FR_LED_CMD:
-		switch (CMN.fr.argv[0]) {
-		case FR_LED_ALIVE:	// green led
-			switch (CMN.fr.argv[1]) {
-			case FR_LED_SET:	// set
-				CMN.green_led.lo = CMN.fr.argv[2];
-				CMN.green_led.hi = CMN.fr.argv[3];
+	case SCALP_LED:
+		switch (cmn.fr.argv[0]) {
+		case SCALP_LED_ALIVE:	// green led
+			switch (cmn.fr.argv[1]) {
+			case SCALP_LED_SET:	// set
+				cmn.green_led.lo = cmn.fr.argv[2];
+				cmn.green_led.hi = cmn.fr.argv[3];
 				break;
 
-			case FR_LED_GET:	// get
-				CMN.fr.argv[2] = CMN.green_led.lo;
-				CMN.fr.argv[3] = CMN.green_led.hi;
+			case SCALP_LED_GET:	// get
+				cmn.fr.argv[2] = cmn.green_led.lo;
+				cmn.fr.argv[3] = cmn.green_led.hi;
 				break;
 
 			default:
 				// reject command
-				CMN.fr.error = 1;
+				cmn.fr.error = 1;
 				break;
 			}
 			break;
 
-		case FR_LED_OPEN:	// orange led
-			switch (CMN.fr.argv[1]) {
-			case FR_LED_SET:	// set
-				CMN.orange_led.lo = CMN.fr.argv[2];
-				CMN.orange_led.hi = CMN.fr.argv[3];
+		case SCALP_LED_SIGNAL:	// orange led
+			switch (cmn.fr.argv[1]) {
+			case SCALP_LED_SET:	// set
+				cmn.orange_led.lo = cmn.fr.argv[2];
+				cmn.orange_led.hi = cmn.fr.argv[3];
 				break;
 
-			case FR_LED_GET:	// get
-				CMN.fr.argv[2] = CMN.orange_led.lo;
-				CMN.fr.argv[3] = CMN.orange_led.hi;
+			case SCALP_LED_GET:	// get
+				cmn.fr.argv[2] = cmn.orange_led.lo;
+				cmn.fr.argv[3] = cmn.orange_led.hi;
 				break;
 
 			default:
 				// reject command
-				CMN.fr.error = 1;
+				cmn.fr.error = 1;
 				break;
 			}
 			break;
 
 		default:
 			// reject command
-			CMN.fr.error = 1;
+			cmn.fr.error = 1;
 			break;
 		}
 		break;
 
 	default:
 		// reject frame
-		CMN.fr.error = 1;
+		cmn.fr.error = 1;
 		break;
 	}
 
 	// enqueue the response
-	PT_WAIT_UNTIL(pt, OK == FIFO_put(&CMN.out_fifo, &CMN.fr));
+	PT_WAIT_UNTIL(pt, OK == fifo_put(&cmn.out_fifo, &cmn.fr));
 
 	PT_RESTART(pt);
 
@@ -244,54 +244,54 @@ static PT_THREAD( CMN_in(pt_t* pt) )
 }
 
 
-static PT_THREAD( CMN_blink(pt_t* pt) )
+static PT_THREAD( scalp_cmn_blink(pt_t* pt) )
 {
 	PT_BEGIN(pt);
 
-	PT_WAIT_UNTIL(pt, TIME_get() >= CMN.time);
+	PT_WAIT_UNTIL(pt, time_get() >= cmn.time);
 
 	// update time-out
-	CMN.time += 10 * TIME_1_MSEC;
+	cmn.time += 10 * TIME_1_MSEC;
 
 	// blink green led
-	CMN.green_led.cnt++;
+	cmn.green_led.cnt++;
 
 	// green led ON ?
 	if ( LED_PORT & GREEN_LED ) {
 		// led ON for its hi duration ?
-		if ( CMN.green_led.cnt >= CMN.green_led.hi ) {
+		if ( cmn.green_led.cnt >= cmn.green_led.hi ) {
 			// turn it off
 			LED_PORT &= ~GREEN_LED;
-                        CMN.green_led.cnt = 0;
+                        cmn.green_led.cnt = 0;
 		}
 	}
 	else {
 		// led off for its lo duration ?
-		if ( CMN.green_led.cnt >= CMN.green_led.lo ) {
+		if ( cmn.green_led.cnt >= cmn.green_led.lo ) {
 			// turn it ON
 			LED_PORT |= GREEN_LED;
-                        CMN.green_led.cnt = 0;
+                        cmn.green_led.cnt = 0;
 		}
 	}
 
 //	// blink orange led
-//	CMN.orange_led.cnt++;
+//	cmn.orange_led.cnt++;
 //
 //	// orange led ON ?
 //	if ( LED_PORT & ORANGE_LED ) {
 //		// led ON for its hi duration ?
-//		if ( CMN.orange_led.cnt >= CMN.orange_led.hi ) {
+//		if ( cmn.orange_led.cnt >= cmn.orange_led.hi ) {
 //			// turn it off
 //			LED_PORT &= ~ORANGE_LED;
-//                        CMN.orange_led.cnt = 0;
+//                        cmn.orange_led.cnt = 0;
 //		}
 //	}
 //	else {
 //		// led off for its lo duration ?
-//		if ( CMN.orange_led.cnt >= CMN.orange_led.lo ) {
+//		if ( cmn.orange_led.cnt >= cmn.orange_led.lo ) {
 //			// turn it ON
 //			LED_PORT |= ORANGE_LED;
-//                        CMN.orange_led.cnt = 0;
+//                        cmn.orange_led.cnt = 0;
 //		}
 //	}
 
@@ -306,29 +306,29 @@ static PT_THREAD( CMN_blink(pt_t* pt) )
 //
 
 // common module initialization
-void CMN_init(void)
+void scalp_cmn_init(void)
 {
 	// fifo init
-	FIFO_init(&CMN.out_fifo, &CMN.out_buf, OUT_SIZE, sizeof(CMN.out_buf[0]));	
-	FIFO_init(&CMN.in_fifo, &CMN.in_buf, IN_SIZE, sizeof(CMN.in_buf[0]));	
+	fifo_init(&cmn.out_fifo, &cmn.out_buf, OUT_SIZE, sizeof(cmn.out_buf[0]));	
+	fifo_init(&cmn.in_fifo, &cmn.in_buf, IN_SIZE, sizeof(cmn.in_buf[0]));	
 
 	// thread context init
-	PT_INIT(&CMN.out_pt);
-	PT_INIT(&CMN.in_pt);
-	PT_INIT(&CMN.blink_pt);
+	PT_INIT(&cmn.out_pt);
+	PT_INIT(&cmn.in_pt);
+	PT_INIT(&cmn.blink_pt);
 
 	// variables init
-	CMN.state = READY;
-	struct led_t zero = {0, 0, 0};
-	CMN.green_led = zero;
-	CMN.orange_led = zero;
-	CMN.time = 0;
+	cmn.state = SCALP_STAT_INIT;
+	struct led zero = {0, 0, 0};
+	cmn.green_led = zero;
+	cmn.orange_led = zero;
+	cmn.time = 0;
 
 	// register own call-back for specific commands
-	CMN.interf.channel = 3;
-	CMN.interf.cmde_mask = _CM(FR_STATE) | _CM(FR_TIME_GET) | _CM(FR_MUX_RESET) | _CM(FR_LED_CMD);
-	CMN.interf.queue = &CMN.in_fifo;
-	dpt_register(&CMN.interf);
+	cmn.interf.channel = 3;
+	cmn.interf.cmde_mask = _CM(SCALP_STATE) | _CM(SCALP_TIME) | _CM(SCALP_MUX) | _CM(SCALP_LED);
+	cmn.interf.queue = &cmn.in_fifo;
+	scalp_dpt_register(&cmn.interf);
 
 	// set led port direction
 	LED_DDR |= GREEN_LED | ORANGE_LED;
@@ -340,20 +340,20 @@ void CMN_init(void)
 
 
 // common module run method
-void CMN_run(void)
+void scalp_cmn_run(void)
 {
 	// handle command if any
-	(void)PT_SCHEDULE(CMN_in(&CMN.in_pt));
+	(void)PT_SCHEDULE(scalp_cmn_in(&cmn.in_pt));
 
 	// send response if any
-	(void)PT_SCHEDULE(CMN_out(&CMN.out_pt));
+	(void)PT_SCHEDULE(scalp_cmn_out(&cmn.out_pt));
 
 	// if all frames are handled
-	if ( ( FIFO_full(&CMN.out_fifo) == 0 ) && ( FIFO_full(&CMN.in_fifo) == 0 ) ) {
+	if ( ( fifo_full(&cmn.out_fifo) == 0 ) && ( fifo_full(&cmn.in_fifo) == 0 ) ) {
 		// unlock the dispatcher
-		dpt_unlock(&CMN.interf);
+		scalp_dpt_unlock(&cmn.interf);
 	}
 
 	// blink the leds
-	(void)PT_SCHEDULE(CMN_blink(&CMN.blink_pt));
+	(void)PT_SCHEDULE(scalp_cmn_blink(&cmn.blink_pt));
 }
