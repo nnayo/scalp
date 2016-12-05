@@ -49,7 +49,7 @@ static struct {
 	u32 time_out;
 	s8 time_correction;
 
-	struct fifo queue;				// reception queue
+	struct nnk_fifo queue;				// reception queue
 	struct scalp buf[QUEUE_SIZE];
 } tsn;
 
@@ -72,7 +72,7 @@ static PT_THREAD( scalp_tsn_tsn(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// every second
-	PT_WAIT_UNTIL(pt, time_get() > tsn.time_out);
+	PT_WAIT_UNTIL(pt, nnk_time_get() > tsn.time_out);
 	tsn.time_out += TIME_1_SEC;
 
 	// retrieve self and BC node address
@@ -91,7 +91,7 @@ static PT_THREAD( scalp_tsn_tsn(pt_t* pt) )
 	scalp_dpt_unlock(&tsn.interf);
 
 	// wait for the answer
-	PT_WAIT_UNTIL(pt, fifo_get(&tsn.queue, &tsn.fr) && tsn.fr.resp);
+	PT_WAIT_UNTIL(pt, nnk_fifo_get(&tsn.queue, &tsn.fr) && tsn.fr.resp);
 
 	// rebuild remote time (AVR is little endian)
 	remote_time.part[0] = tsn.fr.argv[3];
@@ -100,7 +100,7 @@ static PT_THREAD( scalp_tsn_tsn(pt_t* pt) )
 	remote_time.part[3] = tsn.fr.argv[0];
 
 	// read local time
-	local_time = time_get();
+	local_time = nnk_time_get();
 
 	// check whether we are in the future
 	if ( local_time > remote_time.full ) {
@@ -116,7 +116,7 @@ static PT_THREAD( scalp_tsn_tsn(pt_t* pt) )
 	}
 
 	// update time increment
-	time_incr_set(10 * TIME_1_MSEC + tsn.time_correction);
+	nnk_time_incr_set(10 * TIME_1_MSEC + tsn.time_correction);
 
 	// loop back
 	PT_RESTART(pt);
@@ -138,8 +138,8 @@ void scalp_tsn_init(void)
 	// variables init
 	tsn.time_correction = 0;
 	tsn.time_out = TIME_1_SEC;
-	time_incr_set(10 * TIME_1_MSEC);
-	fifo_init(&tsn.queue, &tsn.buf, QUEUE_SIZE, sizeof(tsn.buf) / sizeof(tsn.buf[0]));
+	nnk_time_incr_set(10 * TIME_1_MSEC);
+	nnk_fifo_init(&tsn.queue, &tsn.buf, QUEUE_SIZE, sizeof(tsn.buf) / sizeof(tsn.buf[0]));
 
 	// register to dispatcher
 	tsn.interf.channel = 8;

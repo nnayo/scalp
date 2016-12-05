@@ -60,7 +60,7 @@
 struct scalp_dpt_interface {
 	u8 channel;			// requested channel
 	u64 cmde_mask;		// bit mask for scalp filtering
-	struct fifo* queue;		// queue filled by received scalps
+	struct nnk_fifo* queue;		// queue filled by received scalps
 };
 
 

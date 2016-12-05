@@ -56,13 +56,13 @@ static struct {
 
 	// for incoming frames
 	pt_t	in_pt;						// context
-	struct fifo	in_fifo;					// fifo
+	struct nnk_fifo	in_fifo;					// fifo
 	struct scalp in_buf[NB_IN_FRAMES];		// buffer
 	struct scalp in;
 
 	// for response frames
 	pt_t	out_pt;						// context
-	struct fifo	out_fifo;					// fifo
+	struct nnk_fifo	out_fifo;					// fifo
 	struct scalp out_buf[NB_OUT_FRAMES];		// buffer
 	struct scalp out;
 
@@ -144,10 +144,10 @@ PT_THREAD(bsc_frame_handling(pt_t* pt))
 
 	case SCALP_EEPREAD:
 		// read data
-		eep_read((u16)bsc.addr, (u8*)&bsc.data, sizeof(u16));
+		nnk_eep_read((u16)bsc.addr, (u8*)&bsc.data, sizeof(u16));
 
 		// wait until reading is done
-		PT_WAIT_UNTIL(pt, eep_is_fini());
+		PT_WAIT_UNTIL(pt, nnk_eep_is_fini());
 
 		bsc.resp.argv[2] = (bsc.data & 0xff00) >> 8;
 		bsc.resp.argv[3] = (bsc.data & 0x00ff) >> 0;
@@ -158,16 +158,16 @@ PT_THREAD(bsc_frame_handling(pt_t* pt))
 		bsc.data = (bsc.in.argv[2] << 8) + bsc.in.argv[3];
 
 		// write data
-		eep_write((u16)bsc.addr, (u8*)&bsc.data, sizeof(u16));
+		nnk_eep_write((u16)bsc.addr, (u8*)&bsc.data, sizeof(u16));
 
 		// wait until writing is done
-		PT_WAIT_UNTIL(pt, eep_is_fini());
+		PT_WAIT_UNTIL(pt, nnk_eep_is_fini());
 
 		// read back data
-		eep_read((u16)bsc.addr, (u8*)&bsc.data, sizeof(u16));
+		nnk_eep_read((u16)bsc.addr, (u8*)&bsc.data, sizeof(u16));
 
 		// wait until reading is done
-		PT_WAIT_UNTIL(pt, eep_is_fini());
+		PT_WAIT_UNTIL(pt, nnk_eep_is_fini());
 
 		bsc.resp.argv[2] = (bsc.data & 0xff00) >> 8;
 		bsc.resp.argv[3] = (bsc.data & 0x00ff) >> 0;
@@ -215,7 +215,7 @@ PT_THREAD(bsc_frame_handling(pt_t* pt))
 
 	case SCALP_WAIT:
 		// get current time
-		time = time_get();
+		time = nnk_time_get();
 
 		// compute time at end of delay
 		delay = (u16)bsc.addr;
@@ -236,13 +236,13 @@ PT_THREAD(bsc_frame_handling(pt_t* pt))
 			// for each frame in the container
 			for ( bsc.i = 0; bsc.i < bsc.in.argv[2]; bsc.i++) {
 				// extract the frames from EEPROM
-				eep_read((u16)((u8*)bsc.addr + bsc.i * sizeof(struct scalp)), (u8*)&bsc.cont, sizeof(struct scalp));
+				nnk_eep_read((u16)((u8*)bsc.addr + bsc.i * sizeof(struct scalp)), (u8*)&bsc.cont, sizeof(struct scalp));
 
 				// wait until reading is done
-				PT_WAIT_UNTIL(pt, eep_is_fini());
+				PT_WAIT_UNTIL(pt, nnk_eep_is_fini());
 
 				// enqueue the contained frame
-				PT_WAIT_UNTIL(pt, fifo_put(&bsc.out_fifo, &bsc.cont));
+				PT_WAIT_UNTIL(pt, nnk_fifo_put(&bsc.out_fifo, &bsc.cont));
 			}
 			break;
 
@@ -253,7 +253,7 @@ PT_THREAD(bsc_frame_handling(pt_t* pt))
 				bsc.cont = *((struct scalp *)((u8*)bsc.addr + bsc.i * sizeof(struct scalp)));
 
 				// enqueue the contained frame
-				PT_WAIT_UNTIL(pt, fifo_put(&bsc.out_fifo, &bsc.cont));
+				PT_WAIT_UNTIL(pt, nnk_fifo_put(&bsc.out_fifo, &bsc.cont));
 			}
 			break;
 
@@ -264,7 +264,7 @@ PT_THREAD(bsc_frame_handling(pt_t* pt))
 				memcpy_P(&bsc.cont, (const void *)((u8*)bsc.addr + bsc.i * sizeof(struct scalp)), sizeof(struct scalp));
 
 				// enqueue the contained frame
-				PT_WAIT_UNTIL(pt, fifo_put(&bsc.out_fifo, &bsc.cont));
+				PT_WAIT_UNTIL(pt, nnk_fifo_put(&bsc.out_fifo, &bsc.cont));
 			}
 			break;
 
@@ -280,13 +280,13 @@ PT_THREAD(bsc_frame_handling(pt_t* pt))
 		case SCALP_CONT_PRE_9_STORAGE:
 			// extract the frame from EEPROM
                         bsc.addr = (u16*)(bsc.in.argv[3] * sizeof(struct scalp));
-			eep_read((u16)((u8*)bsc.addr), (u8*)&bsc.cont, sizeof(struct scalp));
+			nnk_eep_read((u16)((u8*)bsc.addr), (u8*)&bsc.cont, sizeof(struct scalp));
 
 			// wait until reading is done
-			PT_WAIT_UNTIL(pt, eep_is_fini());
+			PT_WAIT_UNTIL(pt, nnk_eep_is_fini());
 
 			// enqueue the contained frame
-			PT_WAIT_UNTIL(pt, fifo_put(&bsc.out_fifo, &bsc.cont));
+			PT_WAIT_UNTIL(pt, nnk_fifo_put(&bsc.out_fifo, &bsc.cont));
 			break;
 
 		default:
@@ -307,7 +307,7 @@ PT_THREAD(bsc_frame_handling(pt_t* pt))
 	}
 
 	// enqueue response
-	PT_WAIT_UNTIL(pt, fifo_put(&bsc.out_fifo, &bsc.resp));
+	PT_WAIT_UNTIL(pt, nnk_fifo_put(&bsc.out_fifo, &bsc.resp));
 
 	// let's process the next frame
 	bsc.is_running = FALSE;
@@ -322,14 +322,14 @@ PT_THREAD(bsc_in(pt_t* pt))
 	PT_BEGIN(pt);
 
 	// dequeue the incomed frame if any
-	PT_WAIT_WHILE(pt, KO == fifo_get(&bsc.in_fifo, &bsc.in));
+	PT_WAIT_WHILE(pt, KO == nnk_fifo_get(&bsc.in_fifo, &bsc.in));
 
 	// frame interpretation
 	PT_SPAWN(pt, &bsc.handling_pt, bsc_frame_handling(&bsc.handling_pt));
 
 	// if the last handled frame was a wait one
 	// no other one will be treated before the time-out elapses
-	PT_WAIT_WHILE(pt, (0 != bsc.time_out) && (time_get() <= bsc.time_out));
+	PT_WAIT_WHILE(pt, (0 != bsc.time_out) && (nnk_time_get() <= bsc.time_out));
 
 	// reset time-out was elapsed
 	// this will unblock response sending
@@ -351,13 +351,13 @@ PT_THREAD(bsc_out(pt_t* pt))
 	PT_WAIT_WHILE(pt, 0 != bsc.time_out);
 
 	// dequeue the response frame if any
-	PT_WAIT_WHILE(pt, KO == fifo_get(&bsc.out_fifo, &bsc.out));
+	PT_WAIT_WHILE(pt, KO == nnk_fifo_get(&bsc.out_fifo, &bsc.out));
 
 	// be sure the response is sent
         scalp_dpt_lock(&bsc.interf);
 	if ( KO == scalp_dpt_tx(&bsc.interf, &bsc.out) ) {
 		// else requeue the frame
-		fifo_unget(&bsc.out_fifo, &bsc.out);
+		nnk_fifo_unget(&bsc.out_fifo, &bsc.out);
 	}
 
 	// let's wait the next response
@@ -377,8 +377,8 @@ void scapl_bsc_init(void)
 	struct scalp fr;
 
 	// fifoes init
-	fifo_init(&bsc.in_fifo, &bsc.in_buf, NB_IN_FRAMES, sizeof(struct scalp));
-	fifo_init(&bsc.out_fifo, &bsc.out_buf, NB_OUT_FRAMES, sizeof(struct scalp));
+	nnk_fifo_init(&bsc.in_fifo, &bsc.in_buf, NB_IN_FRAMES, sizeof(struct scalp));
+	nnk_fifo_init(&bsc.out_fifo, &bsc.out_buf, NB_OUT_FRAMES, sizeof(struct scalp));
 
 	// thread init
 	PT_INIT(&bsc.in_pt);
@@ -407,13 +407,13 @@ void scapl_bsc_init(void)
 	scalp_dpt_register(&bsc.interf);
 
 	// drivers init
-	slp_init();
-	eep_init();
+	nnk_slp_init();
+	nnk_eep_init();
 	//SPI_init(SPI_MASTER, SPI_THREE, SPI_MSB, SPI_DIV_16);
 
 	// read reset frame
-	eep_read(0x00, (u8*)&fr, sizeof(struct scalp));
-	while ( ! eep_is_fini() )
+	nnk_eep_read(0x00, (u8*)&fr, sizeof(struct scalp));
+	while ( ! nnk_eep_is_fini() )
 		;
 
 	// check if the frame is valid
@@ -422,7 +422,7 @@ void scapl_bsc_init(void)
 	}
 
 	// enqueue the reset frame
-	fifo_put(&bsc.out_fifo, &fr);
+	nnk_fifo_put(&bsc.out_fifo, &fr);
 
 	// lock the dispatcher to be able to treat the frame
 	scalp_dpt_lock(&bsc.interf);
@@ -438,7 +438,7 @@ void scapl_bsc_run(void)
 	(void)PT_SCHEDULE(bsc_out(&bsc.out_pt));
 
 	// if all frames are handled
-	if ( !bsc.is_running && ( fifo_full(&bsc.out_fifo) == 0 ) && ( fifo_full(&bsc.in_fifo) == 0 ) ) {
+	if ( !bsc.is_running && ( nnk_fifo_full(&bsc.out_fifo) == 0 ) && ( nnk_fifo_full(&bsc.in_fifo) == 0 ) ) {
 		// unlock the dispatcher
 		scalp_dpt_unlock(&bsc.interf);
 	}

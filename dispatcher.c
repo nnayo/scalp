@@ -82,17 +82,17 @@ static struct {
         u64 lock;				// lock bitfield
 
         pt_t appli_pt;				// appli thread
-        struct fifo appli_fifo;
+        struct nnk_fifo appli_fifo;
         struct scalp appli_buf[NB_APPLI_FRAMES];
         struct scalp appli;
 
         pt_t in_pt;				// in thread
-        struct fifo in_fifo;
+        struct nnk_fifo in_fifo;
         struct scalp in_buf[NB_IN_FRAMES];
         struct scalp in;
 
         pt_t out_pt;				// out thread
-        struct fifo out_fifo;
+        struct nnk_fifo out_fifo;
         struct scalp out_buf[NB_OUT_FRAMES];
         struct scalp out;
         struct scalp hard;
@@ -125,11 +125,11 @@ static void scalp_dpt_dispatch(struct scalp* fr)
                 // and if a queue is available
                 if (dpt.channels[i]->cmde_mask & _CM(cmde) && dpt.channels[i]->queue)
                         // enqueue it
-                        fifo_put(dpt.channels[i]->queue, fr);
+                        nnk_fifo_put(dpt.channels[i]->queue, fr);
                 //		// if command is in a range
                 //		if (dpt.channels[i]->cmde_mask & _CM(cmde))
                 //			// enqueue it if a queue is available
-                //			if (dpt.channels[i]->queue && (OK == fifo_put(dpt.channels[i]->queue, fr)))
+                //			if (dpt.channels[i]->queue && (OK == nnk_fifo_put(dpt.channels[i]->queue, fr)))
                 //				// if a success, lock the channel
                 //				dpt.lock |= 1 << i;
         }
@@ -146,7 +146,7 @@ static PT_THREAD( scalp_dpt_appli(pt_t* pt) )
         PT_BEGIN(pt);
 
         // if any awaiting incoming frames
-        PT_WAIT_UNTIL(pt, fifo_get(&dpt.appli_fifo, &fr));
+        PT_WAIT_UNTIL(pt, nnk_fifo_get(&dpt.appli_fifo, &fr));
 
         // route the frame
         ROUT_route(fr.dest, routes, &nb_routes);
@@ -163,7 +163,7 @@ static PT_THREAD( scalp_dpt_appli(pt_t* pt) )
                 fr.dest = routes[i];
                 // if the frame destination is only local
                 if ((fr.dest == DPT_SELF_ADDR) || (fr.dest == dpt.sl_addr)) {
-                        fifo_put(&dpt.in_fifo, &fr);
+                        nnk_fifo_put(&dpt.in_fifo, &fr);
 
                         // short cut the handling to speed up
                         break;
@@ -172,12 +172,12 @@ static PT_THREAD( scalp_dpt_appli(pt_t* pt) )
                 // if broadcasting
                 if (fr.dest == DPT_BROADCAST_ADDR) {
                         // also goes to local node
-                        fifo_put(&dpt.in_fifo, &fr);
+                        nnk_fifo_put(&dpt.in_fifo, &fr);
                 }
 
                 // and finally goes to distant node
                 fr.orig = dpt.sl_addr;
-                fifo_put(&dpt.out_fifo, &fr);
+                nnk_fifo_put(&dpt.out_fifo, &fr);
         }
 
         // so loop back for the next frame
@@ -194,7 +194,7 @@ static PT_THREAD( scalp_dpt_in(pt_t* pt) )
         PT_BEGIN(pt);
 
         // if any awaiting incoming frames
-        PT_WAIT_UNTIL(pt, fifo_get(&dpt.in_fifo, &fr));
+        PT_WAIT_UNTIL(pt, nnk_fifo_get(&dpt.in_fifo, &fr));
 
         // dispatch the frame
         scalp_dpt_dispatch(&fr);
@@ -216,11 +216,11 @@ static PT_THREAD( scalp_dpt_out(pt_t* pt) )
         // if no twi transfer running
         if (dpt.hard_fini == OK) {
                 // read any available frame
-                PT_WAIT_UNTIL(pt, fifo_get(&dpt.out_fifo, &dpt.hard));
+                PT_WAIT_UNTIL(pt, nnk_fifo_get(&dpt.out_fifo, &dpt.hard));
 
                 // compute and save time-out limit
                 // byte transmission is typically 100 us
-                dpt.time_out = time_get() + TIME_1_MSEC * sizeof(struct scalp);
+                dpt.time_out = nnk_time_get() + TIME_1_MSEC * sizeof(struct scalp);
 
                 // now a twi transfer shall begin
                 dpt.hard_fini = KO;
@@ -231,15 +231,15 @@ static PT_THREAD( scalp_dpt_out(pt_t* pt) )
         // in case of I2C read or write are taken from the dpt.hard frame
         switch (dpt.hard.cmde) {
         case SCALP_TWIREAD:
-                twi_res = twi_ms_rx(dpt.hard.dest, dpt.hard.len, (u8*)&dpt.hard + SCALP_ARGV_OFFSET);
+                twi_res = nnk_twi_ms_rx(dpt.hard.dest, dpt.hard.len, (u8*)&dpt.hard + SCALP_ARGV_OFFSET);
                 break;
 
         case SCALP_TWIWRITE:
-                twi_res = twi_ms_tx(dpt.hard.dest, dpt.hard.len, (u8*)&dpt.hard + SCALP_ARGV_OFFSET);
+                twi_res = nnk_twi_ms_tx(dpt.hard.dest, dpt.hard.len, (u8*)&dpt.hard + SCALP_ARGV_OFFSET);
                 break;
 
         default:
-                twi_res = twi_ms_tx(dpt.hard.dest, sizeof(struct scalp) - SCALP_ORIG_OFFSET, (u8*)&dpt.hard + SCALP_ORIG_OFFSET);
+                twi_res = nnk_twi_ms_tx(dpt.hard.dest, sizeof(struct scalp) - SCALP_ORIG_OFFSET, (u8*)&dpt.hard + SCALP_ORIG_OFFSET);
                 break;
         }
 
@@ -263,7 +263,7 @@ static PT_THREAD( scalp_dpt_out(pt_t* pt) )
 
 
 // I2C reception call-back
-static void scalp_dpt_twi_call_back(enum twi_state state, u8 nb_data, void* misc)
+static void scalp_dpt_twi_call_back(enum nnk_twi_state state, u8 nb_data, void* misc)
 {
         (void)misc;
 
@@ -285,10 +285,10 @@ static void scalp_dpt_twi_call_back(enum twi_state state, u8 nb_data, void* misc
                 dpt.hard.error = 1;
 
                 // enqueue the response
-                fifo_put(&dpt.in_fifo, &dpt.hard);
+                nnk_fifo_put(&dpt.in_fifo, &dpt.hard);
 
                 // and stop the com
-                twi_stop();
+                nnk_twi_stop();
                 dpt.hard_fini = OK;
 
                 break;
@@ -308,11 +308,11 @@ static void scalp_dpt_twi_call_back(enum twi_state state, u8 nb_data, void* misc
                         dpt.hard.error = 0;
 
                         // enqueue the response
-                        fifo_put(&dpt.in_fifo, &dpt.hard);
+                        nnk_fifo_put(&dpt.in_fifo, &dpt.hard);
                 }
 
                 // and stop the com
-                twi_stop();
+                nnk_twi_stop();
                 dpt.hard_fini = OK;
 
                 break;
@@ -322,7 +322,7 @@ static void scalp_dpt_twi_call_back(enum twi_state state, u8 nb_data, void* misc
                 // only the origin, the cmde/resp and the arguments are received
                 dpt.hard_fini = KO;
                 dpt.hard.dest = dpt.sl_addr;
-                twi_sl_rx(sizeof(struct scalp) - SCALP_ORIG_OFFSET, (u8*)&dpt.hard + SCALP_ORIG_OFFSET);
+                nnk_twi_sl_rx(sizeof(struct scalp) - SCALP_ORIG_OFFSET, (u8*)&dpt.hard + SCALP_ORIG_OFFSET);
 
                 break;
 
@@ -330,18 +330,18 @@ static void scalp_dpt_twi_call_back(enum twi_state state, u8 nb_data, void* misc
                 // if the msg len is correct
                 if (nb_data == (sizeof(struct scalp) - SCALP_ORIG_OFFSET))
                         // enqueue the response
-                        fifo_put(&dpt.in_fifo, &dpt.hard);
+                        nnk_fifo_put(&dpt.in_fifo, &dpt.hard);
                 // else it is ignored
 
                 // release the bus
-                twi_stop();
+                nnk_twi_stop();
                 dpt.hard_fini = OK;
 
                 break;
 
         case TWI_SL_TX_BEGIN:
                 // don't want to send a single byte
-                twi_sl_tx(0, NULL);
+                nnk_twi_sl_tx(0, NULL);
 
                 break;
 
@@ -354,7 +354,7 @@ static void scalp_dpt_twi_call_back(enum twi_state state, u8 nb_data, void* misc
                 // only the origin, the cmde/resp and the arguments are received
                 dpt.hard_fini = KO;
                 dpt.hard.dest = dpt.sl_addr;
-                twi_sl_rx(sizeof(struct scalp) - SCALP_ORIG_OFFSET, (u8*)&dpt.hard + SCALP_ORIG_OFFSET);
+                nnk_twi_sl_rx(sizeof(struct scalp) - SCALP_ORIG_OFFSET, (u8*)&dpt.hard + SCALP_ORIG_OFFSET);
 
                 break;
 
@@ -362,11 +362,11 @@ static void scalp_dpt_twi_call_back(enum twi_state state, u8 nb_data, void* misc
                 // if the msg len is correct
                 if (nb_data == (sizeof(struct scalp) - SCALP_ORIG_OFFSET))
                         // enqueue the incoming frame
-                        fifo_put(&dpt.in_fifo, &dpt.hard);
+                        nnk_fifo_put(&dpt.in_fifo, &dpt.hard);
                 // else it is ignored
 
                 // release the bus
-                twi_stop();
+                nnk_twi_stop();
                 dpt.hard_fini = OK;
 
                 break;
@@ -378,10 +378,10 @@ static void scalp_dpt_twi_call_back(enum twi_state state, u8 nb_data, void* misc
                 dpt.hard.time_out = 1;
 
                 // enqueue the response
-                fifo_put(&dpt.in_fifo, &dpt.hard);
+                nnk_fifo_put(&dpt.in_fifo, &dpt.hard);
 
                 // and then release the bus
-                twi_stop();
+                nnk_twi_stop();
                 dpt.hard_fini = OK;
 
                 break;
@@ -404,22 +404,22 @@ void scalp_dpt_init(void)
         dpt.lock = 0;
 
         // appli thread init
-        fifo_init(&dpt.appli_fifo, &dpt.appli_buf, NB_APPLI_FRAMES, sizeof(struct scalp));
+        nnk_fifo_init(&dpt.appli_fifo, &dpt.appli_buf, NB_APPLI_FRAMES, sizeof(struct scalp));
         PT_INIT(&dpt.appli_pt);
 
         // in thread init
-        fifo_init(&dpt.in_fifo, &dpt.in_buf, NB_IN_FRAMES, sizeof(struct scalp));
+        nnk_fifo_init(&dpt.in_fifo, &dpt.in_buf, NB_IN_FRAMES, sizeof(struct scalp));
         PT_INIT(&dpt.in_pt);
 
         // out thread init
         dpt.sl_addr = DPT_SELF_ADDR;
         dpt.time_out = TIME_MAX;
-        fifo_init(&dpt.out_fifo, &dpt.out_buf, NB_OUT_FRAMES, sizeof(struct scalp));
+        nnk_fifo_init(&dpt.out_fifo, &dpt.out_buf, NB_OUT_FRAMES, sizeof(struct scalp));
         PT_INIT(&dpt.out_pt);
         dpt.hard_fini = OK;
 
         // start TWI layer
-        twi_init(scalp_dpt_twi_call_back, NULL);
+        nnk_twi_init(scalp_dpt_twi_call_back, NULL);
 }
 
 
@@ -427,7 +427,7 @@ void scalp_dpt_init(void)
 void scalp_dpt_run(void)
 {
         // if current time is above the computed time-out
-        if ((time_get() > dpt.time_out) && (dpt.hard_fini != OK)) {
+        if ((nnk_time_get() > dpt.time_out) && (dpt.hard_fini != OK)) {
                 cli();
                 dpt.hard.time_out = 1;
                 // fake an interrupt with twi layer error
@@ -534,7 +534,7 @@ u8 scalp_dpt_tx(struct scalp_dpt_interface* interf, struct scalp* fr)
         }
 
         // try to enqueue the frame
-        return fifo_put(&dpt.appli_fifo, fr);
+        return nnk_fifo_put(&dpt.appli_fifo, fr);
 }
 
 
@@ -544,12 +544,12 @@ void scalp_dpt_sl_addr_set(u8 addr)
         dpt.sl_addr = addr;
 
         // set slave address at TWI level
-        twi_sl_addr_set(addr);
+        nnk_twi_sl_addr_set(addr);
 }
 
 
 void scalp_dpt_gen_call(u8 flag)
 {
         // just set the general call recognition mode
-        twi_gen_call(flag);
+        nnk_twi_gen_call(flag);
 }

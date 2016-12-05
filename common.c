@@ -69,11 +69,11 @@ static struct {
 	u32 time;
 
 	// outgoing fifo
-	struct fifo out_fifo;
+	struct nnk_fifo out_fifo;
 	struct scalp out_buf[OUT_SIZE];
 
 	// incoming fifo
-	struct fifo in_fifo;
+	struct nnk_fifo in_fifo;
 	struct scalp in_buf[IN_SIZE];
 
 	struct scalp fr;					// a buffer frame
@@ -92,13 +92,13 @@ static PT_THREAD( scalp_cmn_out(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// dequeue a response if any
-	PT_WAIT_UNTIL(pt, OK == fifo_get(&cmn.out_fifo, &fr));
+	PT_WAIT_UNTIL(pt, OK == nnk_fifo_get(&cmn.out_fifo, &fr));
 
 	// make sure to send the response
         scalp_dpt_lock(&cmn.interf);
 	if (KO == scalp_dpt_tx(&cmn.interf, &fr)) {
 		// else requeue the frame
-		fifo_unget(&cmn.out_fifo, &fr);
+		nnk_fifo_unget(&cmn.out_fifo, &fr);
 	}
 
 	// loop back
@@ -118,7 +118,7 @@ static PT_THREAD( scalp_cmn_in(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// wait incoming frame
-	PT_WAIT_UNTIL(pt, fifo_get(&cmn.in_fifo, &cmn.fr));
+	PT_WAIT_UNTIL(pt, nnk_fifo_get(&cmn.in_fifo, &cmn.fr));
 
 	// if frame is a response
 	if (cmn.fr.resp) {
@@ -151,7 +151,7 @@ static PT_THREAD( scalp_cmn_in(pt_t* pt) )
 
 	case SCALP_TIME:
 		// get local time
-		time.full = time_get();
+		time.full = nnk_time_get();
 
 		// build frame
 		// (in AVR u32 representation is little endian)
@@ -236,7 +236,7 @@ static PT_THREAD( scalp_cmn_in(pt_t* pt) )
 	}
 
 	// enqueue the response
-	PT_WAIT_UNTIL(pt, OK == fifo_put(&cmn.out_fifo, &cmn.fr));
+	PT_WAIT_UNTIL(pt, OK == nnk_fifo_put(&cmn.out_fifo, &cmn.fr));
 
 	PT_RESTART(pt);
 
@@ -248,7 +248,7 @@ static PT_THREAD( scalp_cmn_blink(pt_t* pt) )
 {
 	PT_BEGIN(pt);
 
-	PT_WAIT_UNTIL(pt, time_get() >= cmn.time);
+	PT_WAIT_UNTIL(pt, nnk_time_get() >= cmn.time);
 
 	// update time-out
 	cmn.time += 10 * TIME_1_MSEC;
@@ -309,8 +309,8 @@ static PT_THREAD( scalp_cmn_blink(pt_t* pt) )
 void scalp_cmn_init(void)
 {
 	// fifo init
-	fifo_init(&cmn.out_fifo, &cmn.out_buf, OUT_SIZE, sizeof(cmn.out_buf[0]));	
-	fifo_init(&cmn.in_fifo, &cmn.in_buf, IN_SIZE, sizeof(cmn.in_buf[0]));	
+	nnk_fifo_init(&cmn.out_fifo, &cmn.out_buf, OUT_SIZE, sizeof(cmn.out_buf[0]));	
+	nnk_fifo_init(&cmn.in_fifo, &cmn.in_buf, IN_SIZE, sizeof(cmn.in_buf[0]));	
 
 	// thread context init
 	PT_INIT(&cmn.out_pt);
@@ -349,7 +349,7 @@ void scalp_cmn_run(void)
 	(void)PT_SCHEDULE(scalp_cmn_out(&cmn.out_pt));
 
 	// if all frames are handled
-	if ( ( fifo_full(&cmn.out_fifo) == 0 ) && ( fifo_full(&cmn.in_fifo) == 0 ) ) {
+	if ( ( nnk_fifo_full(&cmn.out_fifo) == 0 ) && ( nnk_fifo_full(&cmn.in_fifo) == 0 ) ) {
 		// unlock the dispatcher
 		scalp_dpt_unlock(&cmn.interf);
 	}

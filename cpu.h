@@ -4,7 +4,7 @@
 // CPU load measurment
 
 // module standard interface
-void cpu_init(void);
-void cpu_run(void);
+void scalp_cpu_init(void);
+void scalp_cpu_run(void);
 
 #endif

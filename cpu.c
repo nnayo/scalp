@@ -59,12 +59,12 @@ static struct {
 // private functions
 //
 
-void cpu_stats(void)
+void scalp_cpu_stats(void)
 {
 	u32 time;
 
 	// check if time loop is elapsed
-	time = time_get();
+	time = nnk_time_get();
 	if (time > cpu.time) {
 		// update new time loop end
 		cpu.time += TIME_1_SEC;
@@ -85,13 +85,13 @@ void cpu_stats(void)
 	}
 
 	cpu.stat.cnt++;
-	if (slp_request(cpu.slp) == OK) {
+	if (nnk_slp_request(cpu.slp) == OK) {
 		cpu.stat.slp++;
 	}
 }
 
 
-static PT_THREAD(cpu_com(pt_t* pt))
+static PT_THREAD(scalp_cpu_com(pt_t* pt))
 {
 	PT_BEGIN(pt);
 
@@ -127,7 +127,7 @@ static PT_THREAD(cpu_com(pt_t* pt))
 // module functions
 //
 
-void cpu_init(void)
+void scalp_cpu_init(void)
 {
 	u8 i;
 
@@ -151,7 +151,7 @@ void cpu_init(void)
 	// to call SLP_request() 
 	// and to remind the numbers of sleeps
 	// during a full period of stats
-	cpu.slp = slp_register();
+	cpu.slp = nnk_slp_register();
 
 	// register to dispatcher
 	cpu.interf.channel = 10;
@@ -163,10 +163,10 @@ void cpu_init(void)
 }
 
 
-void cpu_run(void)
+void scalp_cpu_run(void)
 {
-	cpu_stats();
+	scalp_cpu_stats();
 
-	(void)cpu_com(&cpu.pt);
+	(void)scalp_cpu_com(&cpu.pt);
 }
 

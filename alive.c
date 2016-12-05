@@ -65,7 +65,7 @@ static struct {
 	u32 time_out;				// time-out for scan request sending
 
 	struct scalp buf[QUEUE_SIZE];
-	struct fifo in_fifo;				// reception queue
+	struct nnk_fifo in_fifo;				// reception queue
 } alive;
 
 
@@ -137,7 +137,7 @@ static PT_THREAD( scalp_alive_rx(pt_t* pt) )
 
 	PT_BEGIN(pt);
 
-	PT_WAIT_UNTIL(pt, fifo_get(&alive.in_fifo, &fr));
+	PT_WAIT_UNTIL(pt, nnk_fifo_get(&alive.in_fifo, &fr));
 
 	// if not the response from current status request
 	if ( !fr.resp || (fr.t_id != alive.fr.t_id) ) {
@@ -170,7 +170,7 @@ static PT_THREAD( scalp_alive_tx(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// every second
-	PT_WAIT_UNTIL(pt, time_get() > alive.time_out);
+	PT_WAIT_UNTIL(pt, nnk_time_get() > alive.time_out);
 
 	// update time-out
 	alive.time_out += ALV_TIME_INTERVAL;
@@ -274,7 +274,7 @@ void scalp_alive_init(void)
 	alive.cur_mnt = 0;
 	alive.time_out = ALV_TIME_INTERVAL;
 
-	fifo_init(&alive.in_fifo, &alive.buf, QUEUE_SIZE, sizeof(alive.buf[0]));
+	nnk_fifo_init(&alive.in_fifo, &alive.buf, QUEUE_SIZE, sizeof(alive.buf[0]));
 
 	// register own call-back for specific commands
 	alive.interf.channel = 9;

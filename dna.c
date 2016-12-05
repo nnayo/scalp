@@ -65,7 +65,7 @@ static struct {
 	u8 nb_bs;					// number of discovered BS
 	u8 index;					// index in current sending of the list
 
-	struct fifo in_fifo;				// incoming frames fifo
+	struct nnk_fifo in_fifo;				// incoming frames fifo
 	struct scalp in_buf[NB_IN];		// incoming frames buffer
 
 	struct scalp out;				// out going frame
@@ -103,16 +103,16 @@ static PT_THREAD( scalp_dna_scan_free(pt_t* pt, u8 is_bc) )
 		// if not BC
 		if (!is_bc) {
 			// wait a random time to let BC start and avoid collision between IS
-			dna.time = (rand() % 100) * TIME_1_MSEC + time_get();
+			dna.time = (rand() % 100) * TIME_1_MSEC + nnk_time_get();
 
-			PT_WAIT_UNTIL(pt, time_get() > dna.time);
+			PT_WAIT_UNTIL(pt, nnk_time_get() > dna.time);
 		}
 
 		// then send frame
 		PT_WAIT_UNTIL(pt, scalp_dpt_tx(&dna.interf, &dna.out) == OK);
 
 		// wait for the matching response evicting the others
-		PT_WAIT_UNTIL(pt, (OK == fifo_get(&dna.in_fifo, &fr)) && (fr.t_id == dna.out.t_id) );
+		PT_WAIT_UNTIL(pt, (OK == nnk_fifo_get(&dna.in_fifo, &fr)) && (fr.t_id == dna.out.t_id) );
 
 		if ( (fr.cmde == SCALP_TWIREAD) && fr.resp && fr.error ) {
 			// a free address is found
@@ -165,7 +165,7 @@ static PT_THREAD( scalp_dna_scan_bs(pt_t* pt) )
 		PT_WAIT_UNTIL(pt, scalp_dpt_tx(&dna.interf, &dna.out) == OK);
 
 		// wait for the matching response evicting the others
-		PT_WAIT_UNTIL(pt, (OK == fifo_get(&dna.in_fifo, &fr)) && (fr.t_id == dna.out.t_id) );
+		PT_WAIT_UNTIL(pt, (OK == nnk_fifo_get(&dna.in_fifo, &fr)) && (fr.t_id == dna.out.t_id) );
 
 		if ( (fr.cmde == SCALP_TWIREAD) && fr.resp && !fr.error ) {
 			// a new BS is found
@@ -268,7 +268,7 @@ static PT_THREAD( scalp_dna_bc_frame(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// wait incoming command
-	PT_WAIT_UNTIL(pt, OK == fifo_get(&dna.in_fifo, &fr));
+	PT_WAIT_UNTIL(pt, OK == nnk_fifo_get(&dna.in_fifo, &fr));
 
 	// if frame is a response
 	if ( fr.resp ) {
@@ -374,7 +374,7 @@ static PT_THREAD( scalp_dna_is_reg_wait(pt_t* pt, u8* ret) )
 	PT_BEGIN(pt);
 
 	// wait for the time-out or the reception of the response
-	PT_WAIT_UNTIL(pt, (time_out = (time_get() >= dna.time)) || (OK == (*ret = fifo_get(&dna.in_fifo, &fr))) );
+	PT_WAIT_UNTIL(pt, (time_out = (nnk_time_get() >= dna.time)) || (OK == (*ret = nnk_fifo_get(&dna.in_fifo, &fr))) );
 
 	// if time-out occured
 	if (time_out) {
@@ -412,7 +412,7 @@ static PT_THREAD( scalp_dna_is_reg(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// compute the time-out time
-	dna.time = time_get() + TIME_1_MSEC * 500;
+	dna.time = nnk_time_get() + TIME_1_MSEC * 500;
 
 	// send the REGISTER cmde
 	dna.out.dest = DPT_BROADCAST_ADDR;
@@ -462,7 +462,7 @@ static PT_THREAD( scalp_dna_is(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// wait incoming commands
-	PT_WAIT_UNTIL(pt, OK == fifo_get(&dna.in_fifo, &fr));
+	PT_WAIT_UNTIL(pt, OK == nnk_fifo_get(&dna.in_fifo, &fr));
 
 	// immediatly release the channel
 	scalp_dpt_unlock(&dna.interf);
@@ -525,7 +525,7 @@ void scalp_dna_init(enum dna mode)
 	DNA_SELF_TYPE(dna.list) = mode;
 
 	// set fifoes
-	fifo_init(&dna.in_fifo, &dna.in_buf, NB_IN, sizeof(dna.in_buf[0]));
+	nnk_fifo_init(&dna.in_fifo, &dna.in_buf, NB_IN, sizeof(dna.in_buf[0]));
 
 	// register to the dispatcher
 	dna.interf.channel = 2;

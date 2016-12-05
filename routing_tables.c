@@ -55,7 +55,7 @@ static struct {
 	// interface
 	
 	// reception fifo
-	struct fifo in_fifo;
+	struct nnk_fifo in_fifo;
 	struct scalp in_buf[ROUT_NB_RX];
 
 	struct scalp fr;
@@ -148,7 +148,7 @@ static PT_THREAD( scalp_route_rout(pt_t* pt) )
 	PT_BEGIN(pt);
 
 	// if a frame is received
-	PT_WAIT_UNTIL(pt, fifo_get(&route.in_fifo, &route.fr));
+	PT_WAIT_UNTIL(pt, nnk_fifo_get(&route.in_fifo, &route.fr));
 
 	// if it is a response
 	if ( route.fr.resp ) {
@@ -186,7 +186,7 @@ static PT_THREAD( scalp_route_rout(pt_t* pt) )
 	PT_WAIT_UNTIL(pt, scalp_dpt_tx(&route.interf, &route.fr));
 
 	// unlock the channel if no more frame are unqueued
-	if ( fifo_full(&route.in_fifo) == 0 ) {
+	if ( nnk_fifo_full(&route.in_fifo) == 0 ) {
 		scalp_dpt_unlock(&route.interf);
 	}
 
@@ -205,7 +205,7 @@ void scalp_route_init(void)
 {
 	// reset internals
 	route.nb_pairs = 0;
-	fifo_init(&route.in_fifo, &route.in_buf, ROUT_NB_RX, sizeof(route.in_buf[0]));
+	nnk_fifo_init(&route.in_fifo, &route.in_buf, ROUT_NB_RX, sizeof(route.in_buf[0]));
 	PT_INIT(&route.pt);
 
 	// register to dispatcher

@@ -80,7 +80,7 @@ static struct {
 	struct scalp_dpt_interface interf;		// dispatcher interface
 	pt_t	log_pt;				// context
 
-	struct fifo in_fifo;			// reception fifo
+	struct nnk_fifo in_fifo;			// reception fifo
 	struct scalp in_buf[NB_FRAMES];
 	struct scalp fr;				// command frame 
 
@@ -114,10 +114,10 @@ static u8 scalp_log_find_eeprom_start(void)
 	// scan the whole eeprom
 	while (1) {
 		// read the 2 first octets of the log at LOG.addr
-		eep_read(LOG.eeprom_addr, buf, sizeof(buf));
+		nnk_eep_read(LOG.eeprom_addr, buf, sizeof(buf));
 
 		// wait end of reading
-		while ( !eep_is_fini() )
+		while ( !nnk_eep_is_fini() )
 			;
 
 		// if the read octets are erased eeprom
@@ -301,7 +301,7 @@ static PT_THREAD( scalp_log_log(pt_t* pt) )
 		case LOG_OFF:
 		default:
 			// empty the log fifo
-			(void)fifo_get(&LOG.in_fifo, &LOG.fr);
+			(void)nnk_fifo_get(&LOG.in_fifo, &LOG.fr);
 
 			// loop back for next frame
 			PT_RESTART(pt);
@@ -332,7 +332,7 @@ static PT_THREAD( scalp_log_log(pt_t* pt) )
 	}
 
 	// wait while no frame is present in the fifo
-	PT_WAIT_WHILE(pt, KO == fifo_get(&LOG.in_fifo, &LOG.fr));
+	PT_WAIT_WHILE(pt, KO == nnk_fifo_get(&LOG.in_fifo, &LOG.fr));
 
 	// if it is a log command
 	if ( (LOG.fr.cmde == SCALP_LOG) && (!LOG.fr.resp) ) {
@@ -365,7 +365,7 @@ static PT_THREAD( scalp_log_log(pt_t* pt) )
 
 	// build the log packet
 	LOG.block.index = LOG.index;
-	time = time_get();
+	time = nnk_time_get();
 	LOG.block.time[0] = (u8)(time >> 16);
 	LOG.block.time[1] = (u8)(time >>  8);
 	LOG.block.fr = LOG.fr;
@@ -389,10 +389,10 @@ static PT_THREAD( scalp_log_log(pt_t* pt) )
 
 		case LOG_EEPROM:
 			// save it to eeprom
-			PT_WAIT_UNTIL(pt, eep_write(LOG.eeprom_addr, (u8*)&LOG.block, sizeof(struct log)));
+			PT_WAIT_UNTIL(pt, nnk_eep_write(LOG.eeprom_addr, (u8*)&LOG.block, sizeof(struct log)));
 
 			// wait until saving is done
-			PT_WAIT_UNTIL(pt, eep_is_fini());
+			PT_WAIT_UNTIL(pt, nnk_eep_is_fini());
 			break;
 
 		case LOG_SDCARD:
@@ -422,7 +422,7 @@ void scalp_log_init(void)
 
 	// init context and fifo
 	PT_INIT(&LOG.log_pt);
-	fifo_init(&LOG.in_fifo, &LOG.in_buf, NB_FRAMES, sizeof(LOG.in_buf[0]));
+	nnk_fifo_init(&LOG.in_fifo, &LOG.in_buf, NB_FRAMES, sizeof(LOG.in_buf[0]));
 
 	// reset scan start address and index
 	LOG.eeprom_addr = EEPROM_START_ADDR;
