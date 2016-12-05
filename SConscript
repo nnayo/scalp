@@ -10,7 +10,7 @@ scalp = [
     'dispatcher.c',
     'dna.c',
     'log.c',
-    'nat.c',
+    #'nat.c',
     #'reconf.c',
     'time_sync.c',
     'routing_tables.c',

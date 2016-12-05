@@ -167,10 +167,10 @@ then addresses starting with 0 are prioritary upon the others
 
 
 // properties of an I2C connected component (i2c address and type)
-typedef struct {
-	dna_t type;
+struct dna_list {
+	enum dna type;
 	u8 i2c_addr;
-} dna_list_t;
+};
 
 
 //--------------------------------------
@@ -180,12 +180,12 @@ typedef struct {
 // init the DNA protocol
 //
 // mode : BC or IS or other
-extern void DNA_init(dna_t mode);
+void scalp_dna_init(enum dna mode);
 
 // DNA run method
 //
 // the return value shall be ignored
-extern u8 DNA_run(void);
+u8 scalp_dna_run(void);
 
 
 // DNA list composition is
@@ -222,7 +222,7 @@ extern u8 DNA_run(void);
 // nb_is : number of registered IS
 // nb_bs : number of found BS
 //
-extern dna_list_t* DNA_list(u8* nb_is, u8* nb_bs);
+struct dna_list* scalp_dna_list(u8* nb_is, u8* nb_bs);
 
 //--------------------------------------
 // helper macros

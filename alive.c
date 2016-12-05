@@ -75,14 +75,14 @@ static struct {
 
 static u8 scalp_alive_nodes_addresses(void)
 {
-	dna_list_t* list;
+	struct dna_list* list;
 	u8 nb_is;
 	u8 nb_bs;
 	u8 i;
 	u8 nb = 0;
 
 	// retrieve nodes addresses
-	list = DNA_list(&nb_is, &nb_bs);
+	list = scalp_dna_list(&nb_is, &nb_bs);
 
 	// extract the other minuteries addresses
 	for ( i = DNA_FIRST_IS_INDEX(nb_is); i <= DNA_LAST_IS_INDEX(nb_is); i++ ) {

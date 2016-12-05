@@ -51,11 +51,11 @@
 // function prototypes
 //
 
-// init the Log
-extern void LOG_init(void);
+// init the log
+extern void scalp_log_init(void);
 
 // log module run method
-extern void LOG_run(void);
+extern void scalp_log_run(void);
 
 
 #endif	// __LOG_H__

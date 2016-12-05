@@ -40,85 +40,83 @@
 //
 
 static struct {
-	dpt_interface_t interf;		// dispatcher interface
+	struct scalp_dpt_interface interf;		// dispatcher interface
 
 	pt_t pt;					// thread context
 
-	frame_t fr;				// a buffer frame
+	struct scalp fr;				// a buffer frame
 
 	u32 time_out;
 	s8 time_correction;
 
-	fifo_t queue;				// reception queue
-	frame_t buf[QUEUE_SIZE];
-} TSN;
+	struct fifo queue;				// reception queue
+	struct scalp buf[QUEUE_SIZE];
+} tsn;
 
 
 //----------------------------------------
 // private functions
 //
 
-static PT_THREAD( TSN_tsn(pt_t* pt) )
+static PT_THREAD( scalp_tsn_tsn(pt_t* pt) )
 {
 	u32 local_time;
 	union {
 		u32 full;
 		u8 part[4];
 	} remote_time;
-	dna_list_t* list;
+	struct dna_list* list;
 	u8 nb_is;
 	u8 nb_bs;
 
 	PT_BEGIN(pt);
 
 	// every second
-	PT_WAIT_UNTIL(pt, TIME_get() > TSN.time_out);
-	TSN.time_out += TIME_1_SEC;
+	PT_WAIT_UNTIL(pt, time_get() > tsn.time_out);
+	tsn.time_out += TIME_1_SEC;
 
 	// retrieve self and BC node address
-	list = DNA_list(&nb_is, &nb_bs);
+	list = scalp_dna_list(&nb_is, &nb_bs);
 
 	// build the time request
-	TSN.fr.orig = DNA_SELF_ADDR(list);
-	TSN.fr.dest = DNA_BC_ADDR(list);
-	TSN.fr.cmde = FR_TIME_GET;
-	TSN.fr.resp = 0;
-	TSN.fr.error = 0;
-	TSN.fr.eth = 0;
-	TSN.fr.serial = 0;
+	tsn.fr.orig = DNA_SELF_ADDR(list);
+	tsn.fr.dest = DNA_BC_ADDR(list);
+	tsn.fr.cmde = SCALP_TIME;
+	tsn.fr.resp = 0;
+	tsn.fr.error = 0;
 
 	// send the time request
-	dpt_lock(&TSN.interf);
-	PT_WAIT_UNTIL(pt, OK == dpt_tx(&TSN.interf, &TSN.fr));
-	dpt_unlock(&TSN.interf);
+	scalp_dpt_lock(&tsn.interf);
+	PT_WAIT_UNTIL(pt, OK == scalp_dpt_tx(&tsn.interf, &tsn.fr));
+	scalp_dpt_unlock(&tsn.interf);
 
 	// wait for the answer
-	PT_WAIT_UNTIL(pt, FIFO_get(&TSN.queue, &TSN.fr) && TSN.fr.resp);
+	PT_WAIT_UNTIL(pt, fifo_get(&tsn.queue, &tsn.fr) && tsn.fr.resp);
 
 	// rebuild remote time (AVR is little endian)
-	remote_time.part[0] = TSN.fr.argv[3];
-	remote_time.part[1] = TSN.fr.argv[2];
-	remote_time.part[2] = TSN.fr.argv[1];
-	remote_time.part[3] = TSN.fr.argv[0];
+	remote_time.part[0] = tsn.fr.argv[3];
+	remote_time.part[1] = tsn.fr.argv[2];
+	remote_time.part[2] = tsn.fr.argv[1];
+	remote_time.part[3] = tsn.fr.argv[0];
 
 	// read local time
-	local_time = TIME_get();
+	local_time = time_get();
 
 	// check whether we are in the future
 	if ( local_time > remote_time.full ) {
 		// then the local time is running too fast
 		// so slow it down
-		TSN.time_correction--;
+		tsn.time_correction--;
 	}
 	// check whether we are in the past
 	if ( local_time < remote_time.full ) {
 		// then the local time is running too slow
 		// so speed it up
-		TSN.time_correction++;
+		tsn.time_correction++;
 	}
 
 	// update time increment
-	TIME_set_incr(10 * TIME_1_MSEC + TSN.time_correction);
+	time_incr_set(10 * TIME_1_MSEC + tsn.time_correction);
 
 	// loop back
 	PT_RESTART(pt);
@@ -131,29 +129,29 @@ static PT_THREAD( TSN_tsn(pt_t* pt) )
 // public functions
 //
 
-// Time Synchro module initialization
-void TSN_init(void)
+// time synchro module initialization
+void scalp_tsn_init(void)
 {
 	// thread context init
-	PT_INIT(&TSN.pt);
+	PT_INIT(&tsn.pt);
 
 	// variables init
-	TSN.time_correction = 0;
-	TSN.time_out = TIME_1_SEC;
-	TIME_set_incr(10 * TIME_1_MSEC);
-	FIFO_init(&TSN.queue, &TSN.buf, QUEUE_SIZE, sizeof(TSN.buf) / sizeof(TSN.buf[0]));
+	tsn.time_correction = 0;
+	tsn.time_out = TIME_1_SEC;
+	time_incr_set(10 * TIME_1_MSEC);
+	fifo_init(&tsn.queue, &tsn.buf, QUEUE_SIZE, sizeof(tsn.buf) / sizeof(tsn.buf[0]));
 
 	// register to dispatcher
-	TSN.interf.channel = 8;
-	TSN.interf.cmde_mask = _CM(FR_TIME_GET);
-	TSN.interf.queue = &TSN.queue;
-	dpt_register(&TSN.interf);
+	tsn.interf.channel = 8;
+	tsn.interf.cmde_mask = _CM(SCALP_TIME);
+	tsn.interf.queue = &tsn.queue;
+	scalp_dpt_register(&tsn.interf);
 }
 
 
-// Time Synchro module run method
-void TSN_run(void)
+// time synchro module run method
+void scalp_tsn_run(void)
 {
 	// send response if any
-	(void)PT_SCHEDULE(TSN_tsn(&TSN.pt));
+	(void)PT_SCHEDULE(scalp_tsn_tsn(&tsn.pt));
 }

@@ -33,11 +33,11 @@
 // public functions
 //
 
-// Time Synchro module initialization
-extern void TSN_init(void);
+// time synchro module initialization
+extern void scalp_tsn_init(void);
 
-// Time Synchro module run method
-extern void TSN_run(void);
+// time synchro module run method
+extern void scalp_tsn_run(void);
 
 
 #endif	// __TIME_SYNC_H__

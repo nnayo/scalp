@@ -47,8 +47,8 @@
 // pthread interface
 //
 
-extern void ROUT_init(void);
-extern void ROUT_run(void);
+extern void scalp_route_init(void);
+extern void scalp_route_run(void);
 
 
 //------------------------------------------

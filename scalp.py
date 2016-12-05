@@ -17,6 +17,9 @@ class Scalps(object):
         'scalp_common',
         'scalp_reconf',
         'scalp_cpu',
+        'scalp_dna',
+        'scalp_log',
+        'scalp_route',
     ]
 
     def __init__(self):

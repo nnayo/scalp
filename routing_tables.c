@@ -37,10 +37,10 @@
 // private types
 //
 
-typedef struct {
+struct route_item {
 	u8 virtual_addr;
 	u8 routed_addr;
-} rout_elem_t;
+};
 
 
 //------------------------------------------
@@ -50,20 +50,20 @@ typedef struct {
 static struct {
 	// routing table
 	u8 nb_pairs;
-	rout_elem_t table[MAX_ROUTES];
+	struct route_item table[MAX_ROUTES];
 
 	// interface
 	
 	// reception fifo
-	fifo_t in_fifo;
-	frame_t in_buf[ROUT_NB_RX];
+	struct fifo in_fifo;
+	struct scalp in_buf[ROUT_NB_RX];
 
-	frame_t fr;
+	struct scalp fr;
 
-	dpt_interface_t interf;		// dispatcher interface
+	struct scalp_dpt_interface interf;		// dispatcher interface
 
 	pt_t pt;					// thread context
-} ROUT;
+} route;
 
 
 //------------------------------------------
@@ -71,56 +71,56 @@ static struct {
 //
 
 // retrieve the number of registered pairs
-static void ROUT_list(u8* nb_pairs)
+static void scalp_route_list(u8* nb_pairs)
 {
-	*nb_pairs = ROUT.nb_pairs;
+	*nb_pairs = route.nb_pairs;
 }
 
 
 // retrieve the content of the given line if it exists
-static u8 ROUT_line(const u8 line, u8* virtual_addr, u8* routed_addr)
+static u8 scalp_route_line(const u8 line, u8* virtual_addr, u8* routed_addr)
 {
 	// check if the required line exists
-	if ( line > ROUT.nb_pairs ) {
+	if ( line > route.nb_pairs ) {
 		return KO;
 	}
 
 	// retrieve the line
-	*virtual_addr = ROUT.table[line].virtual_addr;
-	*routed_addr = ROUT.table[line].routed_addr;
+	*virtual_addr = route.table[line].virtual_addr;
+	*routed_addr = route.table[line].routed_addr;
 
 	return OK;
 }
 
 
 // add a new pair if possible
-static u8 ROUT_add(const u8 virtual_addr, const u8 routed_addr)
+static u8 scalp_route_add(const u8 virtual_addr, const u8 routed_addr)
 {
 	// check if there is no more place left
-	if ( ROUT.nb_pairs >= MAX_ROUTES ) {
+	if ( route.nb_pairs >= MAX_ROUTES ) {
 		return KO;
 	}
 
 	// add the new pair at the end of the list
-	ROUT.table[ROUT.nb_pairs].virtual_addr = virtual_addr;
-	ROUT.table[ROUT.nb_pairs].routed_addr = routed_addr;
+	route.table[route.nb_pairs].virtual_addr = virtual_addr;
+	route.table[route.nb_pairs].routed_addr = routed_addr;
 
 	// update the pairs counter
-	ROUT.nb_pairs++;
+	route.nb_pairs++;
 
 	return OK;
 }
 
 
 // suppress a pair if it exists
-static u8 ROUT_del(const u8 virtual_addr, const u8 routed_addr)
+static u8 scalp_route_del(const u8 virtual_addr, const u8 routed_addr)
 {
 	u8 match_index = MAX_ROUTES;
 	u8 i;
 
 	// scan the table to find the matching pair
-	for ( i = 0; i < ROUT.nb_pairs; i++ ) {
-		if ( (ROUT.table[i].virtual_addr == virtual_addr) && (ROUT.table[i].routed_addr == routed_addr) ) {
+	for ( i = 0; i < route.nb_pairs; i++ ) {
+		if ( (route.table[i].virtual_addr == virtual_addr) && (route.table[i].routed_addr == routed_addr) ) {
 			match_index = i;
 			break;
 		}
@@ -133,61 +133,61 @@ static u8 ROUT_del(const u8 virtual_addr, const u8 routed_addr)
 
 	// if a matching pair is found
 	// it is deleted by shifting the end of the table by one
-	for ( i = match_index; i < ROUT.nb_pairs - 1; i++ ) {
-		ROUT.table[i] = ROUT.table[i + 1];
+	for ( i = match_index; i < route.nb_pairs - 1; i++ ) {
+		route.table[i] = route.table[i + 1];
 	}	
 
 	// there is now one less pair
-	ROUT.nb_pairs--;
+	route.nb_pairs--;
 
 	return OK;
 }
 
-static PT_THREAD( ROUT_rout(pt_t* pt) )
+static PT_THREAD( scalp_route_rout(pt_t* pt) )
 {
 	PT_BEGIN(pt);
 
 	// if a frame is received
-	PT_WAIT_UNTIL(pt, FIFO_get(&ROUT.in_fifo, &ROUT.fr));
+	PT_WAIT_UNTIL(pt, fifo_get(&route.in_fifo, &route.fr));
 
 	// if it is a response
-	if ( ROUT.fr.resp ) {
+	if ( route.fr.resp ) {
 		// ignore it
 		PT_RESTART(pt);
 	}
         // else lock the channel until responsed
-        dpt_lock(&ROUT.interf);
+        scalp_dpt_lock(&route.interf);
 
 	// treat it
-	switch ( ROUT.fr.cmde ) {
-		case FR_ROUT_LIST:
-			ROUT_list(&ROUT.fr.argv[1]);
+	switch ( route.fr.cmde ) {
+		case SCALP_ROUTELIST:
+			scalp_route_list(&route.fr.argv[1]);
 			break;
 
-		case FR_ROUT_LINE:
-			ROUT.fr.argv[3] = ROUT_line(ROUT.fr.argv[0], &ROUT.fr.argv[1], &ROUT.fr.argv[2]);
+		case SCALP_ROUTELINE:
+			route.fr.argv[3] = scalp_route_line(route.fr.argv[0], &route.fr.argv[1], &route.fr.argv[2]);
 			break;
 
-		case FR_ROUT_ADD:
-			ROUT.fr.argv[2] = ROUT_add(ROUT.fr.argv[0], ROUT.fr.argv[1]);
+		case SCALP_ROUTEADD:
+			route.fr.argv[2] = scalp_route_add(route.fr.argv[0], route.fr.argv[1]);
 			break;
 
-		case FR_ROUT_DEL:
-			ROUT.fr.argv[2] = ROUT_del(ROUT.fr.argv[0], ROUT.fr.argv[1]);
+		case SCALP_ROUTEDEL:
+			route.fr.argv[2] = scalp_route_del(route.fr.argv[0], route.fr.argv[1]);
 			break;
 
 		default:
-			ROUT.fr.error = 1;
+			route.fr.error = 1;
 			break;
 	}
 
 	// and send the response
-	ROUT.fr.resp = 1;
-	PT_WAIT_UNTIL(pt, dpt_tx(&ROUT.interf, &ROUT.fr));
+	route.fr.resp = 1;
+	PT_WAIT_UNTIL(pt, scalp_dpt_tx(&route.interf, &route.fr));
 
 	// unlock the channel if no more frame are unqueued
-	if ( FIFO_full(&ROUT.in_fifo) == 0 ) {
-		dpt_unlock(&ROUT.interf);
+	if ( fifo_full(&route.in_fifo) == 0 ) {
+		scalp_dpt_unlock(&route.interf);
 	}
 
 	// loop back for next frame
@@ -201,25 +201,28 @@ static PT_THREAD( ROUT_rout(pt_t* pt) )
 // pthread interface
 //
 
-void ROUT_init(void)
+void scalp_route_init(void)
 {
 	// reset internals
-	ROUT.nb_pairs = 0;
-	FIFO_init(&ROUT.in_fifo, &ROUT.in_buf, ROUT_NB_RX, sizeof(ROUT.in_buf[0]));
-	PT_INIT(&ROUT.pt);
+	route.nb_pairs = 0;
+	fifo_init(&route.in_fifo, &route.in_buf, ROUT_NB_RX, sizeof(route.in_buf[0]));
+	PT_INIT(&route.pt);
 
 	// register to dispatcher
-	ROUT.interf.channel = 9;
-	ROUT.interf.cmde_mask = _CM(FR_ROUT_LIST) | _CM(FR_ROUT_LINE) | _CM(FR_ROUT_ADD) | _CM(FR_ROUT_DEL);
-	ROUT.interf.queue = &ROUT.in_fifo;
-	dpt_register(&ROUT.interf);
+	route.interf.channel = 9;
+	route.interf.cmde_mask = _CM(SCALP_ROUTELIST)
+                                | _CM(SCALP_ROUTELINE)
+                                | _CM(SCALP_ROUTEADD)
+                                | _CM(SCALP_ROUTEDEL);
+	route.interf.queue = &route.in_fifo;
+	scalp_dpt_register(&route.interf);
 }
 
 
-void ROUT_run(void)
+void scalp_route_run(void)
 {
 	// just handle the frame requests
-	(void)PT_SCHEDULE(ROUT_rout(&ROUT.pt));
+	(void)PT_SCHEDULE(scalp_route_rout(&route.pt));
 }
 
 
@@ -228,17 +231,17 @@ void ROUT_run(void)
 //
 
 // retrieve the routed addresses from the specified address
-void ROUT_route(const u8 addr, u8 list[MAX_ROUTES], u8* list_len)
+void scalp_route_route(const u8 addr, u8 list[MAX_ROUTES], u8* list_len)
 {
 	u8 i;
 	u8 j = 0;
 
 	// scan the routing table
-	for ( i = 0; i < ROUT.nb_pairs; i++ ) {
+	for ( i = 0; i < route.nb_pairs; i++ ) {
 		// append the routed address to the list up to the list size
-		if ( ROUT.table[i].virtual_addr == addr ) {
+		if ( route.table[i].virtual_addr == addr ) {
 			if ( j < *list_len ) {
-				list[j] = ROUT.table[i].routed_addr;
+				list[j] = route.table[i].routed_addr;
 				j++;
 			}
 		}
