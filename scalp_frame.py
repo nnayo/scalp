@@ -57,9 +57,12 @@ class Scalp(object):
         self.stat = status
         if len(argv) > Scalp.nb_args:
             raise ScalpError('too many args: %d > %d' % (len(argv), Scalp.nb_args))
-        self.argv = argv[0]
+        try:
+            self.argv = argv[0]
 
-        self._argv_decode()
+            self._argv_decode()
+        except IndexError:
+            self.argv = None
 
     def __len__(self):
         """

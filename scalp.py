@@ -4,11 +4,10 @@
 generate the .c and .h files from scalp descriptions
 """
 
-from scalp_frame import Scalp
-
 import sys
 import importlib
 import inspect
+import os
 
 
 class Scalps(object):
@@ -20,11 +19,19 @@ class Scalps(object):
         'scalp_dna',
         'scalp_log',
         'scalp_route',
+        'scalp_mpu',
+        'scalp_servo',
+        'scalp_minut',
     ]
 
-    def __init__(self):
+    def __init__(self, extension_path='.'):
         """create the scalps of the known modules"""
         self._scalps = {}
+
+        sys.path.append(extension_path)
+        self.scalp_class = \
+                importlib.import_module('scalp_frame').__dict__['Scalp']
+
         for desc in self.descritions:
             mod = importlib.import_module(desc)
             self._update(mod)
@@ -33,7 +40,8 @@ class Scalps(object):
         """extract the scalps of the module"""
         # filter classes of interest
         klass = [k for k in mod.__dict__.values() if inspect.isclass(k)]
-        klass = [k for k in klass if issubclass(k, Scalp) and k != Scalp]
+        klass = [k for k in klass if issubclass(k, self.scalp_class) 
+                                    and k != self.scalp_class]
 
         # ensure the classes are always listed in the same order
         klass.sort(key=lambda x: x.__name__)
@@ -41,7 +49,7 @@ class Scalps(object):
         # set the command id of the new scalps
         cmde_id = len(self._scalps)
         for k in klass:
-            k._cmde = cmde_id
+            k.cmde = cmde_id
             cmde_id += 1
             self._scalps.update({k.__name__: k})
 
@@ -53,7 +61,7 @@ class Scalps(object):
 
     def scalp(self, dest, orig, t_id=None, cmde=None, stat=None, *argv):
         """instanciate a scalp given its parameters"""
-        cmdes = {f._cmde: f for f in self._scalps.values()}
+        cmdes = {f.cmde: f for f in self._scalps.values()}
 
         # create the scalp associated to the command value
         if cmde in cmdes:
@@ -61,6 +69,13 @@ class Scalps(object):
 
         # no recognized command so create an anonymous scalp
         return Scalp()
+
+    def __getattr__(self, key):
+        """instanciate a class from the registered"""
+        if key in self._scalps:
+            return self._scalps[key]
+
+        raise AttributeError('__getattr__ : %r not in %r' % (key, self._scalps))
 
     def _scalp_defines(self, frm):
         h = self._h_file
@@ -85,7 +100,7 @@ class Scalps(object):
         h = self._h_file
 
         # extract command name in uppercase
-        h.write('\tSCALP_%s = 0x%02x,\n' % (frm.__name__.upper(), frm._cmde))
+        h.write('\tSCALP_%s = 0x%02x,\n' % (frm.__name__.upper(), frm.cmde))
 
         # if a doc is provided, use it
         if frm.__doc__:
@@ -119,7 +134,7 @@ class Scalps(object):
         h.write('//\n')
         h.write('\n')
         h.write('// number of arguments for each scalp\n')
-        h.write('# define SCALP_NB_ARGS\t%d\n' % Scalp.nb_args)
+        h.write('# define SCALP_NB_ARGS\t%d\n' % self.scalp_class.nb_args)
         h.write('\n')
         h.write('// fields offsets\n')
         h.write('# define SCALP_DEST_OFFSET\t0\n')
@@ -168,7 +183,7 @@ class Scalps(object):
         h.write('};\n')
         h.write('\n')
         h.write('\n')
-        for i in range(Scalp.nb_args + 1):
+        for i in range(self.scalp_class.nb_args + 1):
             h.write(
                 'extern u8 scalp_set_%d('
                 'struct scalp* fr, u8 dest, u8 orig, enum scalp_cmde cmde, u8 len' % i)
@@ -185,7 +200,7 @@ class Scalps(object):
         c.write('#include "scalp.h"\n')
         c.write('\n')
         c.write('\n')
-        for i in range(Scalp.nb_args + 1):
+        for i in range(self.scalp_class.nb_args + 1):
             c.write(
                 'u8 scalp_set_%d('
                 'struct scalp* fr, u8 dest, u8 orig, enum scalp_cmde cmde, u8 len' % i)

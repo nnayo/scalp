@@ -21,11 +21,17 @@ class State(Scalp):
         'SET': '0x5e',
 
         'INIT': '0x00',
-        'PARA_OPENING': '0x01',
-        'PARA_CLOSING': '0x02',
+        'LOCK0': '0x01',
+        'LOCK1': '0x02',
+        'LOCK2': '0x03',
         'WAITING': '0x04',
-        'FLIGHT': '0x08',
-        'PARACHUTE': '0x10',
+        'FLIGHT': '0x05',
+        'BALISTIC': '0x06',
+        'WINDOW_BEGIN': '0x07',
+        'OPEN_SEQ': '0x08',
+        'BRAKE': '0x09',
+        'UNLOCK': '0x0a',
+        'PARACHUTE': '0x0b',
     }
 
 
