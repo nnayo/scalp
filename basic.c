@@ -372,7 +372,7 @@ PT_THREAD(bsc_out(pt_t* pt))
 //
 
 // basic module initialization
-void scapl_bsc_init(void)
+void scalp_bsc_init(void)
 {
 	struct scalp fr;
 
@@ -429,7 +429,7 @@ void scapl_bsc_init(void)
 }
 
 
-void scapl_bsc_run(void)
+void scalp_bsc_run(void)
 {
 	// incoming frames handling
 	(void)PT_SCHEDULE(bsc_in(&bsc.in_pt));

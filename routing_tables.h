@@ -47,8 +47,8 @@
 // pthread interface
 //
 
-extern void scalp_route_init(void);
-extern void scalp_route_run(void);
+void scalp_route_init(void);
+void scalp_route_run(void);
 
 
 //------------------------------------------
@@ -56,6 +56,6 @@ extern void scalp_route_run(void);
 //
 
 // retrieve the routed addresses from the specified address
-extern void ROUT_route(const u8 addr, u8 list[MAX_ROUTES], u8* list_len);
+void scalp_route_route(const u8 addr, u8 list[MAX_ROUTES], u8* list_len);
 
 #endif	// __ROUT_H__

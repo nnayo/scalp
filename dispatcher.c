@@ -149,7 +149,7 @@ static PT_THREAD( scalp_dpt_appli(pt_t* pt) )
         PT_WAIT_UNTIL(pt, nnk_fifo_get(&dpt.appli_fifo, &fr));
 
         // route the frame
-        ROUT_route(fr.dest, routes, &nb_routes);
+        scalp_route_route(fr.dest, routes, &nb_routes);
 
         // no route
         if (nb_routes == 0) {
