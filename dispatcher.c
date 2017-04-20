@@ -272,7 +272,7 @@ static void scalp_dpt_twi_call_back(enum nnk_twi_state state, u8 nb_data, void* 
 
         // upon the state
         switch (state) {
-        case TWI_NO_SL:
+        case NNK_TWI_NO_SL:
                 // if the slave doesn't respond
                 // whether the I2C address is free, so take it
                 // or the slave has crached
@@ -293,9 +293,9 @@ static void scalp_dpt_twi_call_back(enum nnk_twi_state state, u8 nb_data, void* 
 
                 break;
 
-        case TWI_MS_RX_END:
+        case NNK_TWI_MS_RX_END:
                 // reading data ends
-        case TWI_MS_TX_END:
+        case NNK_TWI_MS_TX_END:
                 // writing data ends
 
                 // simple I2C actions are directly handled
@@ -317,7 +317,7 @@ static void scalp_dpt_twi_call_back(enum nnk_twi_state state, u8 nb_data, void* 
 
                 break;
 
-        case TWI_SL_RX_BEGIN:
+        case NNK_TWI_SL_RX_BEGIN:
                 // just provide a buffer to store the incoming frame
                 // only the origin, the cmde/resp and the arguments are received
                 dpt.hard_fini = KO;
@@ -326,7 +326,7 @@ static void scalp_dpt_twi_call_back(enum nnk_twi_state state, u8 nb_data, void* 
 
                 break;
 
-        case TWI_SL_RX_END:
+        case NNK_TWI_SL_RX_END:
                 // if the msg len is correct
                 if (nb_data == (sizeof(struct scalp) - SCALP_ORIG_OFFSET))
                         // enqueue the response
@@ -339,17 +339,17 @@ static void scalp_dpt_twi_call_back(enum nnk_twi_state state, u8 nb_data, void* 
 
                 break;
 
-        case TWI_SL_TX_BEGIN:
+        case NNK_TWI_SL_TX_BEGIN:
                 // don't want to send a single byte
                 nnk_twi_sl_tx(0, NULL);
 
                 break;
 
-        case TWI_SL_TX_END:
+        case NNK_TWI_SL_TX_END:
                 // the bus will be released by hardware
                 break;
 
-        case TWI_GENCALL_BEGIN:
+        case NNK_TWI_GENCALL_BEGIN:
                 // just provide a buffer to store the incoming frame
                 // only the origin, the cmde/resp and the arguments are received
                 dpt.hard_fini = KO;
@@ -358,7 +358,7 @@ static void scalp_dpt_twi_call_back(enum nnk_twi_state state, u8 nb_data, void* 
 
                 break;
 
-        case TWI_GENCALL_END:
+        case NNK_TWI_GENCALL_END:
                 // if the msg len is correct
                 if (nb_data == (sizeof(struct scalp) - SCALP_ORIG_OFFSET))
                         // enqueue the incoming frame
@@ -431,7 +431,7 @@ void scalp_dpt_run(void)
                 cli();
                 dpt.hard.time_out = 1;
                 // fake an interrupt with twi layer error
-                scalp_dpt_twi_call_back(TWI_ERROR, 0, NULL);
+                scalp_dpt_twi_call_back(NNK_TWI_ERROR, 0, NULL);
                 sei();
         }
 
