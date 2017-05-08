@@ -32,25 +32,27 @@
 
 #include "avr/io.h"
 
-#include <string.h>		// memset()
+#include <string.h>                // memset()
 
 
 //----------------------------------------
 // private defines
 //
 
-#define NB_FRAMES	7
+#define NB_IN_FRAMES  5
+#define NB_OUT_FRAMES  2
 
-#define MINIMAL_FILTER	_CM(SCALP_LOG)
+#define MINIMAL_FILTER  SCALP_DPT_CM(SCALP_LOG)
 
-#define NB_ORIG_FILTER	6
+#define NB_ORIG_FILTER  5
 
-#define SAVE_IN_RAM_ENABLED
-#ifdef SAVE_IN_RAM_ENABLED
-#ifndef DEBUG_EXTRA
-#define DEBUG_EXTRA	0
-#endif
-# define RAM_BUFFER_SIZE	(30 + DEBUG_EXTRA)
+// enable the save mediums
+#define LOG_IN_RAM_ENABLED
+//#define LOG_IN_EEPROM_ENABLED
+//#define LOG_IN_SDCARD_ENABLED
+
+#ifdef LOG_IN_RAM_ENABLED
+# define RAM_BUFFER_SIZE  12
 #endif
 
 
@@ -59,16 +61,20 @@
 //
 
 struct log {
-	u8	index;			// log index (unique for each log session)
-	u8	time[2];		// middle octets of the time (2.56 ms resol / 46.6 h scale)
-	struct scalp fr;		// complete frame
+        u8 index;    // log index (unique for each log session)
+        u8 time[2];  // middle octets of the time (2.56 ms resol / 46.6 h scale)
+        struct scalp sclp;  // complete scalp
 };
 
 enum log_state {
-	LOG_OFF,
-	LOG_RAM,
-	LOG_SDCARD,
-	LOG_EEPROM,
+        LOG_OFF,
+        LOG_RAM,
+#ifdef LOG_IN_EEPROM_ENABLE
+        LOG_EEPROM,
+#endif
+#ifdef LOG_IN_SDCARD_ENABLE
+        LOG_SDCARD,
+#endif
 };
 
 
@@ -77,337 +83,395 @@ enum log_state {
 //
 
 static struct {
-	struct scalp_dpt_interface interf;		// dispatcher interface
-	pt_t	log_pt;				// context
+        struct scalp_dpt_interface interf;  // dispatcher interface
+        pt_t in_pt;                         // context
+        pt_t out_pt;                        // context
 
-	struct nnk_fifo in_fifo;			// reception fifo
-	struct scalp in_buf[NB_FRAMES];
-	struct scalp fr;				// command frame 
+        struct nnk_fifo in_fifo;            // reception fifo
+        struct scalp in_buf[NB_IN_FRAMES];
+        struct nnk_fifo out_fifo;           // emission fifo
+        struct scalp out_buf[NB_OUT_FRAMES];
+        struct scalp fr;                    // command frame 
 
-	enum log_state state;			// logging state
+        enum log_state state;               // logging state
 
-	u16	eeprom_addr;			// address in eeprom
-	u64	sdcard_addr;			// address in sdcard
-	u8	index;					// session index
-
-	u8 orig_filter[NB_ORIG_FILTER];	// origin node filter
-
-	struct log block;
-
-#ifdef SAVE_IN_RAM_ENABLED
-	u8 ram_index;
-	struct log ram_buffer[RAM_BUFFER_SIZE];
+#ifdef LOG_IN_RAM_ENABLED
+        struct {
+                u8 index;
+                struct log buffer[RAM_BUFFER_SIZE];
+        } ram;
 #endif
-} LOG;
+#ifdef LOG_IN_EEPROM_ENABLE
+        struct {
+                u16 addr;                   // address in eeprom
+        } eeprom;
+#endif
+#ifdef LOG_IN_SDCARD_ENABLE
+        struct {
+                u64 addr;                   // address in sdcard
+        } sdcard;
+#endif
+        u8 index;                           // session index
+
+        struct {
+                u8 orig[NB_ORIG_FILTER];    // origin node filter
+                u32 cmd;                    // command filter
+                u32 rsp;                    // response filter
+        } filter;
+
+        struct log block;
+} log;
 
 
 //----------------------------------------
 // private functions
 //
 
+#ifdef LOG_IN_EEPROM_ENABLE
 // find the start address the new logging session
 // and return the log index found in eeprom
-static u8 scalp_log_find_eeprom_start(void)
+static u8 scalp_log_eeprom_start_find(void)
 {
-	u8 buf[2];
+        u8 buf[2];
 
-	// scan the whole eeprom
-	while (1) {
-		// read the 2 first octets of the log at LOG.addr
-		nnk_eep_read(LOG.eeprom_addr, buf, sizeof(buf));
+        // scan the whole eeprom
+        while (1) {
+                // read the 2 first octets of the log at log.addr
+                nnk_eep_read(log.eeprom.addr, buf, sizeof(buf));
 
-		// wait end of reading
-		while ( !nnk_eep_is_fini() )
-			;
+                // wait end of reading
+                while ( !nnk_eep_is_fini() )
+                        ;
 
-		// if the read octets are erased eeprom
-		if ( (buf[0] == 0xff) && (buf[1] == 0xff) ) {
-			// the new log session start address is found (here)
-			//
-			// the previous index is known from the previous read (see below)
-			// so increment it
-			LOG.index++;
+                // if the read octets are erased eeprom
+                if ( (buf[0] == 0xff) && (buf[1] == 0xff) ) {
+                        // the new log session start address is found (here)
+                        //
+                        // the previous index is known from the previous read (see below)
+                        // so increment it
+                        log.index++;
 
-			// finally the scan is over
-			return LOG.index;
-		}
+                        // finally the scan is over
+                        return log.index;
+                }
 
-		// extract index
-		LOG.index = buf[0];
-	
-		// check the next log block
-		LOG.eeprom_addr += sizeof(struct log);
+                // extract index
+                log.index = buf[0];
+        
+                // check the next log block
+                log.eeprom.addr += sizeof(struct log);
 
-		// if address is out of range
-		if ( LOG.eeprom_addr >= EEPROM_END_ADDR ) {
-			// eeprom is full
-			// so give up
-			// the log thread protection will prevent overwriting
-			return 0xff;
-		}
-	}
+                // if address is out of range
+                if ( log.eeprom.addr >= EEPROM_END_ADDR ) {
+                        // eeprom is full
+                        // so give up
+                        // the log thread protection will prevent overwriting
+                        return 0xff;
+                }
+        }
 }
+#endif
 
 
+#ifdef LOG_IN_SDCARD_ENABLE
 // find the start address in sdcard for this new logging session
 // and set the common log index for eeprom and sdcard
-static void scalp_log_find_sdcard_start(u8 eeprom_index)
+static void scalp_log_sdcard_start_find(u8 start_index)
 {
-	u8 buf[2];
+        u8 buf[2];
 
-	// scan the whole eeprom
-	while (1) {
-		// read the 2 first octets of the log at LOG.addr
-		SD_read(LOG.sdcard_addr, buf, sizeof(buf));
-		while ( !SD_is_fini() )
-			;
+        // scan the whole sdcard
+        while (true) {
+                // read the 2 first octets of the log at log.addr
+                SD_read(log.sdcard.addr, buf, sizeof(buf));
+                while ( !SD_is_fini() )
+                        ;
 
-		// if the read octets are erased eeprom
-		if ( (buf[0] == 0xff) && (buf[1] == 0xff) ) {
-			// the new log session start address is found (here)
-			//
-			// the previous index is known from the previous read (see below)
-			// so increment it
-			LOG.index++;
+                // if the read octets are erased eeprom
+                if ((buf[0] == 0xff) && (buf[1] == 0xff)) {
+                        // the new log session start address is found (here)
+                        // the previous index is known from the previous read (see below)
+                        // so increment it
+                        log.index++;
 
-			// index found during eeprom scanning is higher
-			if ( eeprom_index > LOG.index ) {
-				// use the eeprom index
-				LOG.index = eeprom_index;
-			}
+                        // index found during eeprom scanning is higher
+                        if (start_index > log.index) {
+                                // use the eeprom index
+                                log.index = start_index;
+                        }
 
-			// finally the scan is over
-			return;
-		}
+                        // finally the scan is over
+                        return;
+                }
 
-		// extract index
-		LOG.index = buf[0];
-	
-		// check the next log block
-		LOG.sdcard_addr += sizeof(struct log);
+                // extract index
+                log.index = buf[0];
+        
+                // check the next log block
+                log.sdcard.addr += sizeof(struct log);
 
-		// if address is out of range
-		if ( LOG.sdcard_addr >= SDCARD_END_ADDR ) {
-			// sdcard is full
-			// so give up
-			// the log thread protection will prevent overwriting
-			LOG.index = 0xff;
-		}
-	}
+                // if address is out of range
+                if (log.sdcard.addr >= SDCARD_END_ADDR) {
+                        // sdcard is full
+                        // so give up
+                        // the log thread protection will prevent overwriting
+                        log.index = 0xff;
+                }
+        }
+}
+#endif
+
+
+void scalp_log_command(struct scalp* fr)
+{
+        u32 filter;
+
+        // upon the sub-command
+        switch (fr->argv[0]) {
+        case SCALP_LOG_OFF:  // off
+                log.state = LOG_OFF;
+                break;
+
+#ifdef LOG_IN_RAM_ENABLED
+        case SCALP_LOG_RAM:  // log to RAM
+                log.state = LOG_RAM;
+                break;
+#endif
+
+#ifdef LOG_IN_EEPROM_ENABLED
+        case SCALP_LOG_EEPROM:  // log to eeprom
+                log.state = LOG_EEPROM;
+                break;
+#endif
+
+#ifdef LOG_IN_SDCARD_ENABLED
+        case SCALP_LOG_SDCARD:  // log to sdcard
+                log.state = LOG_SDCARD;
+                break;
+#endif
+
+        case SCALP_LOG_CMD_ENABLE:  // enable command filter
+                filter  = (u32)fr->argv[1] << 24;
+                filter |= (u32)fr->argv[2] << 16;
+                filter |= (u32)fr->argv[3] <<  8;
+                filter |= (u32)fr->argv[4] <<  0;
+
+                // enable the commands
+                log.filter.cmd |= filter;
+
+                // modify filtering preserving logging communication
+                log.interf.cmde_mask = MINIMAL_FILTER 
+                        | log.filter.cmd | log.filter.rsp;
+                break;
+
+        case SCALP_LOG_CMD_DISABLE:  // disable command filter
+                filter  = (u32)fr->argv[1] << 24;
+                filter |= (u32)fr->argv[2] << 16;
+                filter |= (u32)fr->argv[3] <<  8;
+                filter |= (u32)fr->argv[4] <<  0;
+
+                // disable the commands
+                log.filter.cmd &= ~filter;
+
+                // modify filtering preserving logging communication
+                log.interf.cmde_mask = MINIMAL_FILTER 
+                        | log.filter.cmd | log.filter.rsp;
+                break;
+
+        case SCALP_LOG_CMD_GET:  // get command filter
+                // get the filter value
+                filter = log.filter.cmd;
+
+                fr->argv[1] = (u8)(filter >> 24);
+                fr->argv[2] = (u8)(filter >> 16);
+                fr->argv[3] = (u8)(filter >>  8);
+                fr->argv[4] = (u8)(filter >>  0);
+                break;
+
+        case SCALP_LOG_RSP_ENABLE:  // enable response filter
+                filter  = (u32)fr->argv[1] << 24;
+                filter |= (u32)fr->argv[2] << 16;
+                filter |= (u32)fr->argv[3] <<  8;
+                filter |= (u32)fr->argv[4] <<  0;
+
+                // enable the responses
+                log.filter.rsp |= filter;
+
+                // modify filtering preserving logging communication
+                log.interf.cmde_mask = MINIMAL_FILTER 
+                        | log.filter.cmd | log.filter.rsp;
+                break;
+
+        case SCALP_LOG_RSP_DISABLE:  // disable response filter
+                filter  = (u32)fr->argv[1] << 24;
+                filter |= (u32)fr->argv[2] << 16;
+                filter |= (u32)fr->argv[3] <<  8;
+                filter |= (u32)fr->argv[4] <<  0;
+
+                // disable the responses
+                log.filter.rsp &= ~filter;
+
+                // modify filtering preserving logging communication
+                log.interf.cmde_mask = MINIMAL_FILTER 
+                        | log.filter.cmd | log.filter.rsp;
+                break;
+
+        case SCALP_LOG_RSP_GET:  // get response filter
+                // get the filter value
+                filter = log.filter.rsp;
+
+                fr->argv[1] = (u8)(filter >> 24);
+                fr->argv[2] = (u8)(filter >> 16);
+                fr->argv[3] = (u8)(filter >>  8);
+                fr->argv[4] = (u8)(filter >>  0);
+                break;
+
+        case SCALP_LOG_ORIG_SET:  // set origin filter
+                memcpy(log.filter.orig, &fr->argv[1], NB_ORIG_FILTER);
+                break;
+
+        case SCALP_LOG_ORIG_GET:  // get origin filter
+                memcpy(&fr->argv[1], log.filter.orig, NB_ORIG_FILTER);
+                break;
+
+        default:
+                // unknown sub-command
+                fr->error = 1;
+                break;
+        }
+
+        // set response bit
+        fr->resp = 1;
+
+        // enqueue the scalp for response sending
+        nnk_fifo_put(&log.out_fifo, &fr);
+
+        // restore scalp intial state
+        fr->resp = fr->error = 0;
 }
 
 
-static void scalp_log_command(struct scalp* fr)
+static PT_THREAD( scalp_log_in(pt_t* pt) )
 {
-	u64 filter;
+        struct scalp fr;
 
-	// upon the sub-command
-	switch ( fr->argv[0] ) {
-	case SCALP_LOG_OFF:	// off
-		LOG.state = LOG_OFF;
-		break;
+        PT_BEGIN(pt);
 
-	case SCALP_LOG_RAM:	// log to RAM
-		LOG.state = LOG_RAM;
-		break;
+        // wait while no frame is present in the fifo
+        PT_WAIT_UNTIL(pt, nnk_fifo_get(&log.in_fifo, &fr));
 
-	case SCALP_LOG_SDCARD:	// log to sdcard
-		LOG.state = LOG_SDCARD;
-		break;
+        // if it is a log command and not a response
+        if (fr.cmde == SCALP_LOG && !fr.resp)
+                // treat it
+                scalp_log_command(&fr);
 
-	case SCALP_LOG_EEPROM:	// log to eeprom
-		LOG.state = LOG_EEPROM;
-		break;
+        // by default, every frame is filtered
+        u8 is_filtered = OK;
 
-	case SCALP_LOG_SET_LSB:	// set command filter LSB part
-		filter  = (u64)fr->argv[1] << 24;
-		filter &= (u64)fr->argv[2] << 16;
-		filter &= (u64)fr->argv[3] <<  8;
-		filter &= (u64)fr->argv[4] <<  0;
+        // filter the frame according to its origin
+        for (u8 i = 0; i < sizeof(log.filter.orig); i++) {
+                // passthrough or frame origin and filter acceptance match
+                if ((log.filter.orig[i] == 0x00) || (log.filter.orig[i] == fr.orig)) {
+                        is_filtered = KO;
+                        break;
+                }
+        }
 
-		// preserve the logging basic communication
-		filter |= MINIMAL_FILTER;
+        // filter the scalp according to its command
+        if (!fr.resp && !(log.filter.cmd & SCALP_DPT_CM(fr.cmde)))
+                is_filtered = OK;
 
-		// set the new filter value
-		LOG.interf.cmde_mask = filter;
-		break;
+        // filter the scalp according to its response status
+        if (fr.resp && !(log.filter.rsp & SCALP_DPT_CM(fr.cmde)))
+                is_filtered = OK;
 
-	case SCALP_LOG_SET_MSB:	// set command filter MSB part
-		filter  = (u64)fr->argv[1] << 56;
-		filter &= (u64)fr->argv[2] << 48;
-		filter &= (u64)fr->argv[3] << 40;
-		filter &= (u64)fr->argv[4] << 32;
+        // if frame is filtered away
+        if (is_filtered) {
+                // lop back for next frame
+                PT_RESTART(pt);
+        }
 
-		// preserve the logging basic communication
-		filter |= MINIMAL_FILTER;
+        // build the log packet
+        log.block.index = log.index;
+        u32 time = nnk_time_get();
+        log.block.time[0] = (u8)(time >> 16);
+        log.block.time[1] = (u8)(time >>  8);
+        log.block.sclp = fr;
 
-		// set the new filter value
-		LOG.interf.cmde_mask = filter;
-		break;
+        switch (log.state) {
+        case LOG_OFF:
+                // nothing to do
+                break;
 
-	case SCALP_LOG_GET_LSB:	// get command filter LSB part
-		// get the filter value
-		filter = LOG.interf.cmde_mask;
+#ifdef LOG_IN_RAM_ENABLED
+        case LOG_RAM:
+                log.ram.buffer[log.ram.index] = log.block;
+                log.ram.index++;
+                if (log.ram.index >= RAM_BUFFER_SIZE)
+                        log.ram.index = 0;
+                break;
+#endif
 
-		fr->argv[1] = (u8)(filter >> 24);
-		fr->argv[2] = (u8)(filter >> 16);
-		fr->argv[3] = (u8)(filter >>  8);
-		fr->argv[4] = (u8)(filter >>  0);
-		break;
+#ifdef LOG_IN_EEPROM_ENABLED
+        case LOG_EEPROM:
+                // if address is out of range
+                if (log.eeprom_addr >= EEPROM_END_ADDR)
+                        // logging is no more possible
+                        // so quit
+                        PT_EXIT(pt);
 
-	case SCALP_LOG_GET_MSB:	// get command filter MSB part
-		// get the filter value
-		filter = LOG.interf.cmde_mask;
+                // save it to eeprom
+                PT_WAIT_UNTIL(pt, nnk_eep_write(log.eeprom_addr, (u8*)&log.block, sizeof(struct log)));
 
-		fr->argv[1] = (u8)(filter >> 56);
-		fr->argv[2] = (u8)(filter >> 48);
-		fr->argv[3] = (u8)(filter >> 40);
-		fr->argv[4] = (u8)(filter >> 32);
-		break;
+                // wait until saving is done
+                PT_WAIT_UNTIL(pt, nnk_eep_is_fini());
+                break;
+#endif
 
-	case SCALP_LOG_SET_ORIG:	// set origin filter
-		memcpy(LOG.orig_filter, &fr->argv[1], NB_ORIG_FILTER);
-		break;
+#ifdef LOG_IN_SDCARD_ENABLED
+        case LOG_SDCARD:
+                // if address is out of range
+                if (log.sdcard_addr >= SDCARD_END_ADDR)
+                        // logging is no more possible
+                        // so quit
+                        PT_EXIT(pt);
 
-	case SCALP_LOG_GET_ORIG:	// get origin filter
-		memcpy(&fr->argv[1], LOG.orig_filter, NB_ORIG_FILTER);
-		break;
+                // save it to sdcard (fill the write buffer)
+                PT_WAIT_UNTIL(pt, SD_write(log.sdcard_addr, (u8*)&log.block, sizeof(struct log)));
 
-	default:
-		// unknown sub-command
-		fr->error = 1;
-		break;
-	}
+                // wait until saving is done
 
-	// set response bit
-	fr->resp = 1;
+                break;
+#endif
+
+        default:
+                // shall never happen but just in case
+                // loop back for next frame
+                break;
+        }
+
+        // loop back to treat the next frame to log
+        PT_RESTART(pt);
+
+        PT_END(pt);
 }
 
-
-static PT_THREAD( scalp_log_log(pt_t* pt) )
+static PT_THREAD( scalp_log_out(pt_t* pt) )
 {
-	u32 time;
-	u8 is_filtered;
-	u8 i;
+        PT_BEGIN(pt);
 
-	PT_BEGIN(pt);
+        // wait while no frame is present in the fifo
+        PT_WAIT_UNTIL(pt, nnk_fifo_get(&log.out_fifo, &log.fr));
 
-	// systematically unlock the channel
-	// because most of time no response is sent
-	// when a response is needed, the channel will be locked
-	scalp_dpt_unlock(&LOG.interf);
+        // send the response
+        scalp_dpt_lock(&log.interf);
+        PT_WAIT_UNTIL(pt, scalp_dpt_tx(&log.interf, &log.fr));
+        scalp_dpt_unlock(&log.interf);
 
-	switch ( LOG.state ) {
-		case LOG_OFF:
-		default:
-			// empty the log fifo
-			(void)nnk_fifo_get(&LOG.in_fifo, &LOG.fr);
+        // loop back to treat the next frame to log
+        PT_RESTART(pt);
 
-			// loop back for next frame
-			PT_RESTART(pt);
-			break;
-
-		case LOG_RAM:
-#ifdef SAVE_IN_RAM_ENABLED
-#endif
-			break;
-
-		case LOG_EEPROM:
-			// if address is out of range
-			if ( LOG.eeprom_addr >= EEPROM_END_ADDR ) {
-				// logging is no more possible
-				// so quit
-				PT_EXIT(pt);
-			}
-			break;
-
-		case LOG_SDCARD:
-			// if address is out of range
-			if ( LOG.sdcard_addr >= SDCARD_END_ADDR ) {
-				// logging is no more possible
-				// so quit
-				PT_EXIT(pt);
-			}
-			break;
-	}
-
-	// wait while no frame is present in the fifo
-	PT_WAIT_WHILE(pt, KO == nnk_fifo_get(&LOG.in_fifo, &LOG.fr));
-
-	// if it is a log command
-	if ( (LOG.fr.cmde == SCALP_LOG) && (!LOG.fr.resp) ) {
-		// treat it
-		scalp_log_command(&LOG.fr);
-
-		// send the response
-		PT_WAIT_UNTIL(pt, (scalp_dpt_lock(&LOG.interf), OK == scalp_dpt_tx(&LOG.interf, &LOG.fr)));
-		scalp_dpt_unlock(&LOG.interf);
-
-		// and wait till the next frame
-		PT_RESTART(pt);
-	}
-
-	// filter the frame according to its origin
-	is_filtered = OK;	// by default, every frame is filtered
-	for ( i = 0; i < sizeof(LOG.orig_filter); i++ ) {
-		// passthrough or frame origin and filter acceptance match
-		if ( (LOG.orig_filter[i] == 0x00) || (LOG.orig_filter[i] == LOG.fr.orig) ){
-			is_filtered = KO;
-			break;
-		}
-	}
-
-	// if frame is filtered away
-	if ( is_filtered ) {
-		// lop back for next frame
-		PT_RESTART(pt);
-	}
-
-	// build the log packet
-	LOG.block.index = LOG.index;
-	time = nnk_time_get();
-	LOG.block.time[0] = (u8)(time >> 16);
-	LOG.block.time[1] = (u8)(time >>  8);
-	LOG.block.fr = LOG.fr;
-
-	switch ( LOG.state ) {
-		case LOG_OFF:
-		default:
-			// shall never happen but just in case
-			// loop back for next frame
-			PT_RESTART(pt);
-			break;
-
-		case LOG_RAM:
-#ifdef SAVE_IN_RAM_ENABLED
-			LOG.ram_buffer[LOG.ram_index] = LOG.block;
-			if ( LOG.ram_index < (RAM_BUFFER_SIZE - 1) ) {
-				LOG.ram_index++;
-			}
-#endif
-			break;
-
-		case LOG_EEPROM:
-			// save it to eeprom
-			PT_WAIT_UNTIL(pt, nnk_eep_write(LOG.eeprom_addr, (u8*)&LOG.block, sizeof(struct log)));
-
-			// wait until saving is done
-			PT_WAIT_UNTIL(pt, nnk_eep_is_fini());
-			break;
-
-		case LOG_SDCARD:
-			// save it to sdcard (fill the write buffer)
-			PT_WAIT_UNTIL(pt, SD_write(LOG.sdcard_addr, (u8*)&LOG.block, sizeof(struct log)));
-
-			// wait until saving is done
-
-			break;
-	}
-
-	// loop back to treat the next frame to log
-	PT_RESTART(pt);
-
-	PT_END(pt);
+        PT_END(pt);
 }
 
 
@@ -418,52 +482,52 @@ static PT_THREAD( scalp_log_log(pt_t* pt) )
 // log module initialization
 void scalp_log_init(void)
 {
-	u8 index;
+        // init context and fifo
+        PT_INIT(&log.in_pt);
+        nnk_fifo_init(&log.in_fifo, &log.in_buf, NB_IN_FRAMES, sizeof(log.in_buf[0]));
+        PT_INIT(&log.out_pt);
+        nnk_fifo_init(&log.out_fifo, &log.out_buf, NB_OUT_FRAMES, sizeof(log.out_buf[0]));
 
-	// init context and fifo
-	PT_INIT(&LOG.log_pt);
-	nnk_fifo_init(&LOG.in_fifo, &LOG.in_buf, NB_FRAMES, sizeof(LOG.in_buf[0]));
+        // reset scan start address and index
+#ifdef LOG_IN_RAM_ENABLED
+        log.ram.index = 0;
+#endif
+#ifdef LOG_IN_EEPROM_ENABLED
+        log.eeprom_addr = EEPROM_START_ADDR;
+#endif
+#ifdef LOG_IN_SDCARD_ENABLED
+        log.sdcard_addr = SDCARD_START_ADDR;
+#endif
+        log.index = 0;
 
-	// reset scan start address and index
-	LOG.eeprom_addr = EEPROM_START_ADDR;
-	LOG.sdcard_addr = SDCARD_START_ADDR;
-	LOG.index = 0;
+        // origin filter blocks no node by default
+        memset(&log.filter.orig, 0x00, NB_ORIG_FILTER);
 
-	// origin filter blocks every node by default
-	memset(&LOG.orig_filter, 0xff, NB_ORIG_FILTER);
-	memset(&LOG.orig_filter, 0x00, NB_ORIG_FILTER);	// for debug, no filtering
+        // logging is off by default
+        log.state = LOG_OFF;
 
-	LOG.state = LOG_RAM;
-
-#ifdef SAVE_IN_RAM_ENABLED
-	LOG.ram_index = 0;
+        // find the start address for this session
+#ifdef LOG_IN_EEPROM_ENABLED
+        log.index = scalp_log_find_eeprom_start();
+#endif
+#ifdef LOG_IN_SDCARD_ENABLED
+        scalp_log_find_sdcard_start(log.index);
 #endif
 
-	// find the start address for this session
-	index = scalp_log_find_eeprom_start();
-	scalp_log_find_sdcard_start(index);
-
-	// register to dispatcher
-	LOG.interf.channel = 6;
-	LOG.interf.queue = &LOG.in_fifo;
-#if 0	// for debug
-	LOG.interf.cmde_mask = _CM(FR_STATE)
-				| _CM(FR_MUX_RESET)
-				| _CM(FR_RECONF_MODE)
-				| _CM(FR_MINUT_TAKE_OFF)
-				| _CM(FR_MINUT_DOOR)
-				| _CM(FR_SWITCH_POWER)
-				| MINIMAL_FILTER;
-#else
-	LOG.interf.cmde_mask = -1;
-#endif
-	scalp_dpt_register(&LOG.interf);
+        // register to dispatcher
+        log.interf.channel = 6;
+        log.interf.queue = &log.in_fifo;
+        log.interf.cmde_mask = MINIMAL_FILTER;
+        scalp_dpt_register(&log.interf);
 }
 
 
 // log run method
 void scalp_log_run(void)
 {
-	// logging job
-	(void)PT_SCHEDULE(scalp_log_log(&LOG.log_pt));
+        // incoming scalp handling
+        (void)PT_SCHEDULE(scalp_log_in(&log.in_pt));
+
+        // outgoing scalp handling
+        (void)PT_SCHEDULE(scalp_log_out(&log.out_pt));
 }

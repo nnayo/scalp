@@ -27,8 +27,8 @@
 //
 
 
-#ifndef __DISPATCHER_H__
-# define __DISPATCHER_H__
+#ifndef __SCALP_DISPATCHER_H__
+# define __SCALP_DISPATCHER_H__
 
 
 # include "type_def.h"
@@ -42,15 +42,15 @@
 // public defines
 //
 
-# define DPT_CHAN_NB	12				// dispatcher available channels number
+# define SCALP_DPT_CHAN_NB         12    // dispatcher available channels number
 
-# define DPT_BROADCAST_ADDR	0x00		// scalp broadcast address
-# define DPT_SELF_ADDR		0x01		// reserved I2C address used for generic local node
-# define DPT_FIRST_ADDR		0x02		// first I2C address
-# define DPT_LAST_ADDR		0x7f		// last I2C address
+# define SCALP_DPT_BROADCAST_ADDR  0x00  // scalp broadcast address
+# define SCALP_DPT_SELF_ADDR       0x01  // reserved I2C address used for generic local node
+# define SCALP_DPT_FIRST_ADDR      0x02  // first I2C address
+# define SCALP_DPT_LAST_ADDR       0x7f  // last I2C address
 
 
-#define _CM(x)		(u64)(1LL << (x))	// compute command mask
+#define SCALP_DPT_CM(x)  (u32)(1L << (x))  // compute command mask
 
 
 //----------------------------------------
@@ -58,32 +58,11 @@
 //
 
 struct scalp_dpt_interface {
-	u8 channel;			// requested channel
-	u64 cmde_mask;		// bit mask for scalp filtering
-	struct nnk_fifo* queue;		// queue filled by received scalps
+        u8 channel;              // requested channel
+        u8 overflow_cnt;         // incremented if the queue is full
+        u32 cmde_mask;           // bit mask for scalp filtering
+        struct nnk_fifo* queue;  // queue filled by received scalps
 };
-
-
-//----------------------------------------
-// public macros
-//
-
-#define DPT_HEADER(fr_name, _dest, _orig, _cmde, _error, _resp, _eth, _serial)	\
-	fr_name.dest = _dest;												\
-	fr_name.orig = _orig;												\
-	fr_name.cmde = _cmde;												\
-	fr_name.error = _error;												\
-	fr_name.resp = _resp;												\
-	fr_name.eth = _eth;													\
-	fr_name.serial = _serial;
-
-#define DPT_ARGS(fr_name, _argv0, _argv1, _argv2, _argv3, _argv4, _argv5)	\
-	fr_name.argv[0] = _argv0;											\
-	fr_name.argv[1] = _argv1;											\
-	fr_name.argv[2] = _argv2;											\
-	fr_name.argv[1] = _argv3;												\
-	fr_name.argv[2] = _argv4;												\
-	fr_name.argv[3] = _argv5;
 
 
 //----------------------------------------
@@ -109,7 +88,7 @@ extern void scalp_dpt_run(void);
 //  - the command range that is used to transmit the received scalp to the application : the low and high values are inclusive
 //  - the command mask only authorizes the commands corresponding to the set bits
 //  - the queue is filled by the dispatcher when a scalp is received 
-//		(the associated channel is locked if the scalp is enqueued)
+//                (the associated channel is locked if the scalp is enqueued)
 //
 // the available channel is directly set in the structure
 // if it is 0xff, it means no more channel are available
@@ -155,4 +134,4 @@ void scalp_dpt_sl_addr_set(u8 addr);
 void scalp_dpt_gen_call(u8 flag);
 
 
-#endif	// __DISPATCHER_H__
+#endif        // __DISPATCHER_H__

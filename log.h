@@ -20,11 +20,11 @@
 //
 
 //--------------------------------------
-// Log
+// log
 //
 
-#ifndef __LOG_H__
-# define __LOG_H__
+#ifndef __SCALP_LOG_H__
+# define __SCALP_LOG_H__
 
 # include "type_def.h"
 
@@ -38,8 +38,8 @@
 #define EEPROM_END_ADDR		((u16)1024)		// 1 Ko
 
 // sdcard limits
-#define SDCARD_START_ADDR	((u64)0x100)	// FAT headers
-#define SDCARD_END_ADDR		((u64)2 * 1024 * 1024 * 1024)	// 2 Go
+#define SDCARD_START_ADDR	((u32)0x100)	// FAT headers
+#define SDCARD_END_ADDR		((u32)2 * 1024 * 1024 * 1024)	// 2 Go
 
 
 //--------------------------------------
@@ -58,4 +58,4 @@ extern void scalp_log_init(void);
 extern void scalp_log_run(void);
 
 
-#endif	// __LOG_H__
+#endif	// __SCALP_LOG_H__

@@ -39,7 +39,7 @@ class Scalp(object):
 
     nb_args = 6  # config parameter
     t_id = 0     # auto-incremented for each instanciation
-    _cmde = None  # to be set to set the frame id
+    cmde = None
 
     def __init__(self,
                  dest=None, orig=None, t_id=None, status=None,
@@ -54,15 +54,27 @@ class Scalp(object):
             Scalp.t_id += 1
         else:
             self.t_id = t_id
+        # self.cmde is set when the class is scanned
         self.stat = status
+
         if len(argv) > Scalp.nb_args:
             raise ScalpError('too many args: %d > %d' % (len(argv), Scalp.nb_args))
-        try:
-            self.argv = argv[0]
 
-            self._argv_decode()
+        self.argv_len = len(argv)
+        try:
+            self.argv = argv \
+                + (0xff, ) * (self.nb_args - len(argv))
+
         except IndexError:
             self.argv = None
+            self.argv_len = 0
+
+        # update status len field
+        if status is not None:
+            self.stat &= ~self.LEN_MASK
+            self.stat |= self.argv_len
+        else:
+            self.stat = self.argv_len
 
     def __len__(self):
         """
@@ -148,6 +160,9 @@ class Scalp(object):
 
         return d
 
+    def _cmde_decode(self):
+        return self.__class__.__name__
+
     @staticmethod
     def _addr_str(addr):
         if addr == Scalp.I2C_BROADCAST_ADDR:
@@ -189,74 +204,61 @@ class Scalp(object):
 
         return st
 
-    def _argv_str_decode(self):
+    def _argv_str(self):
         """
         can be overloaded for specific argument decoding
         """
-        st = '[0x'
+        st = '0x'
         for i in range(len(self.argv)):
             st += '%02x ' % self.argv[i]
         st = st[:-1]
-        st += ']'
         return st
 
-    def _argv_decode(self):
-        pass
+    def to_colored_string(self):
+        # '\033[0m' default
+        # '\033[1m' bold
+        # '\033[2m' dim
+        # '\033[22m' normal brightness
+        # foreground
+        # '\033[30m' black
+        # '\033[31m' red
+        # '\033[32m' green
+        # '\033[33m' orange
+        # '\033[34m' blue
+        # '\033[35m' violet
+        # '\033[36m' cyan
+        # '\033[37m' white
+        # background
+        # '\033[40m' black
+        # '\033[41m' red
+        # '\033[42m' green
+        # '\033[43m' orange
+        # '\033[44m' blue
+        # '\033[45m' violet
+        # '\033[46m' cyan
+        # '\033[47m' white
 
-    def _argv_encode(self):
-        return None
+        st = '\033[35m%s\033[32m(' % self._cmde_decode()
+        st += 'dest=%s, ' % self._dest_str()
+        st += 'orig=%s, ' % self._orig_str()
+        st += 't_id=%s, ' % self._t_id_str()
+        st += 'stat=%s, ' % self._status_str()
+        st += 'argv=[%s]' % self._argv_str()
+        st += ')\033[0m'
 
-#    def __str__(self):
-#        # '\033[0m' default
-#        # '\033[1m' bold
-#        # '\033[2m' dim
-#        # '\033[22m' normal brightness
-#        # foreground
-#        # '\033[30m' black
-#        # '\033[31m' red
-#        # '\033[32m' green
-#        # '\033[33m' orange
-#        # '\033[34m' blue
-#        # '\033[35m' violet
-#        # '\033[36m' cyan
-#        # '\033[37m' white
-#        # background
-#        # '\033[40m' black
-#        # '\033[41m' red
-#        # '\033[42m' green
-#        # '\033[43m' orange
-#        # '\033[44m' blue
-#        # '\033[45m' violet
-#        # '\033[46m' cyan
-#        # '\033[47m' white
-#
-#        st = '\033[35m%s\033[32m {' % self._cmde_decode()
-#        st += 'dest: %s, ' % self._dest_str()
-#        st += 'orig: %s, ' % self.__orig_str()
-#        st += 't_id: 0x%02x, ' % self._t_id_str()
-#        st += 'stat: %s, ' % self._status_str()
-#        st += 'argv: %s' % self._argv_str()
-#        st += '}'
-#
-#        return st
-#
-#    def __repr__(self):
-#        try:
-#            st = '%s(' % self._cmde_decode()
-#            st += '0x%02x, ' % self.dest
-#            st += '0x%02x, ' % self.orig
-#            st += '0x%02x, ' % self.t_id
-#            st += '0x%02x, ' % self.stat
-#            st += '['
-#            for i in range(len(self.argv)):
-#                st += '0x%02x, ' % self.argv[i]
-#            st += '])'
-#
-#        except TypeError:
-#            st = 'invalid frame'
-#
-#        return st
-#
+        return st
+
+    def __str__(self):
+        st = '%s(' % self._cmde_decode()
+        st += 'dest=%s, ' % self._dest_str()
+        st += 'orig=%s, ' % self._orig_str()
+        st += 't_id=%s, ' % self._t_id_str()
+        st += 'stat=%s, ' % self._status_str()
+        st += 'argv=[%s]' % self._argv_str()
+        st += ')'
+
+        return st
+
     def __getitem__(self, key):
         """
         retrieve a field value by its name or its index

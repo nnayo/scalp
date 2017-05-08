@@ -1,14 +1,39 @@
-SRCS = scalp.c basic.c common.c dispatcher.c routing_tables.c cpu.c
-	#dna.c log.c nat.c reconf.c
-OBJS = scalp.o basic.o common.o dispatcher.o routing_tables.o cpu.o
+SRCS = \
+       scalp.c \
+       basic.c \
+       common.c \
+       dispatcher.c \
+       routing_tables.c \
+       cpu.c \
+       log.c
+       #dna.c nat.c reconf.c
+
+OBJS = $(patsubst %.c, %.o, $(SRCS))
+
+SCALP = \
+	scalp.py \
+	scalp_basic.py \
+	scalp_common.py \
+	scalp_cpu.py \
+	scalp_dna.py \
+	scalp_frame.py \
+	scalp_log.py \
+	scalp_minut.py \
+	scalp_mpu.py \
+	scalp_other.py \
+	scalp_reconf.py \
+	scalp_route.py \
+	scalp_servo.py \
+	scalp_space.py
 
 CFLAGS = \
-		 -g -std=c99 \
-		 -Wall -Wextra -Werror \
-		 -mmcu=atmega328p \
-		 -Os -mcall-prologues -fshort-enums \
-		 -I. \
-		 -I$(TROLL_PROJECTS)/nanoK
+	 -g -std=c99 \
+	 -Wall -Wextra -Werror \
+	 -mmcu=atmega328p \
+	 -Os -fno-inline-small-functions \
+	 -fshort-enums -funsigned-bitfields \
+	 -I. \
+	 -I$(TROLL_PROJECTS)/nanok
 
 CC = avr-gcc
 AR = avr-ar
@@ -41,7 +66,7 @@ libscalp.a: $(OBJS)
 
 scalp.o: scalp.c scalp.h
 
-scalp.c scalp.h: scalp.py
+scalp.c scalp.h: $(SCALP)
 	./scalp.py
 
 clean:

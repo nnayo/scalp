@@ -59,18 +59,18 @@
 #include "utils/fifo.h"
 #include "utils/pt.h"
 
-#include <avr/interrupt.h>	// cli()
+#include <avr/interrupt.h>  // cli()
 
-#include <string.h>	// memset
+#include <string.h>  // memset
 
 
 //----------------------------------------
 // private defines
 //
 
-#define NB_IN_FRAMES			(MAX_ROUTES / 2)
-#define NB_OUT_FRAMES			(MAX_ROUTES / 2)
-#define NB_APPLI_FRAMES			1
+#define NB_IN_FRAMES    (MAX_ROUTES / 2)
+#define NB_OUT_FRAMES   (MAX_ROUTES / 2)
+#define NB_APPLI_FRAMES 1
 
 
 //----------------------------------------
@@ -78,29 +78,30 @@
 //
 
 static struct {
-        struct scalp_dpt_interface* channels[DPT_CHAN_NB];	// available channels
-        u64 lock;				// lock bitfield
+        // available channels
+        struct scalp_dpt_interface* channels[SCALP_DPT_CHAN_NB];
+        u16 lock;                                // lock bitfield
 
-        pt_t appli_pt;				// appli thread
+        pt_t appli_pt;                           // appli thread
         struct nnk_fifo appli_fifo;
         struct scalp appli_buf[NB_APPLI_FRAMES];
         struct scalp appli;
 
-        pt_t in_pt;				// in thread
+        pt_t in_pt;                              // in thread
         struct nnk_fifo in_fifo;
         struct scalp in_buf[NB_IN_FRAMES];
         struct scalp in;
 
-        pt_t out_pt;				// out thread
+        pt_t out_pt;                             // out thread
         struct nnk_fifo out_fifo;
         struct scalp out_buf[NB_OUT_FRAMES];
         struct scalp out;
         struct scalp hard;
         volatile u8 hard_fini;
 
-        u8 sl_addr;				// own I2C slave address
-        u32 time_out;				// tx time-out time
-        u8 t_id;				// current transaction id value
+        u8 sl_addr;    // own I2C slave address
+        u32 time_out;  // tx time-out time
+        u8 t_id;       // current transaction id value
 } dpt;
 
 
@@ -115,23 +116,19 @@ static void scalp_dpt_dispatch(struct scalp* fr)
         enum scalp_cmde cmde = fr->cmde;
 
         // for each registered commands ranges
-        for (i = 0; i < DPT_CHAN_NB; i++) {
+        for (i = 0; i < SCALP_DPT_CHAN_NB; i++) {
                 // if channel is not registered
-                if ( dpt.channels[i] == NULL )
+                if (dpt.channels[i] == NULL)
                         // skip to following
                         continue;
 
                 // if command is in a range
                 // and if a queue is available
-                if (dpt.channels[i]->cmde_mask & _CM(cmde) && dpt.channels[i]->queue)
-                        // enqueue it
-                        nnk_fifo_put(dpt.channels[i]->queue, fr);
-                //		// if command is in a range
-                //		if (dpt.channels[i]->cmde_mask & _CM(cmde))
-                //			// enqueue it if a queue is available
-                //			if (dpt.channels[i]->queue && (OK == nnk_fifo_put(dpt.channels[i]->queue, fr)))
-                //				// if a success, lock the channel
-                //				dpt.lock |= 1 << i;
+                if (dpt.channels[i]->cmde_mask & SCALP_DPT_CM(cmde) &&
+                    dpt.channels[i]->queue)
+                        // try to enqueue it
+                        if (!nnk_fifo_put(dpt.channels[i]->queue, fr))
+                                dpt.channels[i]->overflow_cnt++;
         }
 }
 
@@ -162,7 +159,8 @@ static PT_THREAD( scalp_dpt_appli(pt_t* pt) )
         for (i = 0; i < nb_routes; i++) {
                 fr.dest = routes[i];
                 // if the frame destination is only local
-                if ((fr.dest == DPT_SELF_ADDR) || (fr.dest == dpt.sl_addr)) {
+                if ((fr.dest == SCALP_DPT_SELF_ADDR) ||
+                    (fr.dest == dpt.sl_addr)) {
                         nnk_fifo_put(&dpt.in_fifo, &fr);
 
                         // short cut the handling to speed up
@@ -170,7 +168,7 @@ static PT_THREAD( scalp_dpt_appli(pt_t* pt) )
                 }
 
                 // if broadcasting
-                if (fr.dest == DPT_BROADCAST_ADDR) {
+                if (fr.dest == SCALP_DPT_BROADCAST_ADDR) {
                         // also goes to local node
                         nnk_fifo_put(&dpt.in_fifo, &fr);
                 }
@@ -220,7 +218,8 @@ static PT_THREAD( scalp_dpt_out(pt_t* pt) )
 
                 // compute and save time-out limit
                 // byte transmission is typically 100 us
-                dpt.time_out = nnk_time_get() + TIME_1_MSEC * sizeof(struct scalp);
+                dpt.time_out = nnk_time_get() +
+                               TIME_1_MSEC * sizeof(struct scalp);
 
                 // now a twi transfer shall begin
                 dpt.hard_fini = KO;
@@ -253,7 +252,7 @@ static PT_THREAD( scalp_dpt_out(pt_t* pt) )
         }
 
         // wait until the twi transfer is done
-        PT_WAIT_UNTIL(pt, dpt.hard_fini != OK);
+        PT_WAIT_UNTIL(pt, dpt.hard_fini);
 
         // and loop back for another transfer
         PT_RESTART(pt);
@@ -279,15 +278,18 @@ static void scalp_dpt_twi_call_back(enum nnk_twi_state state, u8 nb_data, void* 
                 // whatever the problem, put a failed resp in rx frame
                 // as the comm was locally initiated
                 // all the fields are those of dpt.hard frame
-                dpt.hard.orig = dpt.hard.dest;
-                dpt.hard.dest = dpt.sl_addr;
-                dpt.hard.resp = 1;
-                dpt.hard.error = 1;
+                // except if it is a broadcast then just ignore it
+                if (dpt.hard.dest != SCALP_DPT_BROADCAST_ADDR)  {
+                        dpt.hard.orig = dpt.hard.dest;
+                        dpt.hard.dest = dpt.sl_addr;
+                        dpt.hard.resp = 1;
+                        dpt.hard.error = 1;
 
-                // enqueue the response
-                nnk_fifo_put(&dpt.in_fifo, &dpt.hard);
+                        // enqueue the response
+                        nnk_fifo_put(&dpt.in_fifo, &dpt.hard);
+                }
 
-                // and stop the com
+                // stop the com
                 nnk_twi_stop();
                 dpt.hard_fini = OK;
 
@@ -300,10 +302,11 @@ static void scalp_dpt_twi_call_back(enum nnk_twi_state state, u8 nb_data, void* 
 
                 // simple I2C actions are directly handled
                 // communications with other nodes will received a response later
-                if ((dpt.hard.cmde == SCALP_TWIREAD) || (dpt.hard.cmde == SCALP_TWIWRITE)) {
+                if ((dpt.hard.cmde == SCALP_TWIREAD) ||
+                    (dpt.hard.cmde == SCALP_TWIWRITE)) {
                         // update header
                         dpt.hard.orig = dpt.hard.dest;
-                        dpt.hard.dest = DPT_SELF_ADDR;
+                        dpt.hard.dest = SCALP_DPT_SELF_ADDR;
                         dpt.hard.resp = 1;
                         dpt.hard.error = 0;
 
@@ -399,9 +402,9 @@ void scalp_dpt_init(void)
         u8 i;
 
         // channels and lock reset
-        for (i = 0; i < DPT_CHAN_NB; i++)
+        for (i = 0; i < SCALP_DPT_CHAN_NB; i++)
                 dpt.channels[i] = NULL;
-        dpt.lock = 0;
+        dpt.lock = 0x0000;
 
         // appli thread init
         nnk_fifo_init(&dpt.appli_fifo, &dpt.appli_buf, NB_APPLI_FRAMES, sizeof(struct scalp));
@@ -412,7 +415,7 @@ void scalp_dpt_init(void)
         PT_INIT(&dpt.in_pt);
 
         // out thread init
-        dpt.sl_addr = DPT_SELF_ADDR;
+        dpt.sl_addr = SCALP_DPT_SELF_ADDR;
         dpt.time_out = TIME_MAX;
         nnk_fifo_init(&dpt.out_fifo, &dpt.out_buf, NB_OUT_FRAMES, sizeof(struct scalp));
         PT_INIT(&dpt.out_pt);
@@ -464,7 +467,7 @@ void scalp_dpt_register(struct scalp_dpt_interface* interf)
         }
 
         // check if channel is invalid
-        if (interf->channel >= DPT_CHAN_NB) {
+        if (interf->channel >= SCALP_DPT_CHAN_NB) {
                 // then quit immediatly with invalid channel
                 interf->channel = 0xff;
                 return;
@@ -472,13 +475,13 @@ void scalp_dpt_register(struct scalp_dpt_interface* interf)
 
         // check if requested channel is free
         // else find and use the next free
-        for (i = interf->channel; i < DPT_CHAN_NB; i++) {
+        for (i = interf->channel; i < SCALP_DPT_CHAN_NB; i++) {
                 if (dpt.channels[i] == NULL) {
                         break;
                 }
         }
         // if none free, return error (0xff)
-        if (i == DPT_CHAN_NB ){
+        if (i == SCALP_DPT_CHAN_NB ){
                 interf->channel = 0xff;
                 return;
         }
@@ -488,6 +491,9 @@ void scalp_dpt_register(struct scalp_dpt_interface* interf)
 
         // set the available channel
         interf->channel = i;
+
+        // reset oveflow stats
+        interf->overflow_cnt = 0;
 }
 
 
@@ -507,22 +513,18 @@ void scalp_dpt_unlock(struct scalp_dpt_interface* interf)
 
 u8 scalp_dpt_tx(struct scalp_dpt_interface* interf, struct scalp* fr)
 {
-        u8 i;
-
-        // if the tx is locked by a channel of higher priority
-        for (i = 0; (i < DPT_CHAN_NB) && (i < interf->channel); i++) {
-                if ( dpt.lock & (1 << i) ) {
-                        // the sender shall retry
-                        // so return KO
-                        return KO;
-                }
-        }
+        u16 mask = 1 << interf->channel;
 
         // if the sender didn't lock the channel
-        if (!(dpt.lock & (1 << interf->channel))) {
+        if (!(dpt.lock & mask))
                 // it can't send the frame
                 return KO;
-        }
+
+        // if the tx is locked by a channel of higher priority
+        mask -= 1;
+        if (dpt.lock & mask)
+                // the sender shall retry
+                return KO;
 
         // if the frame is not a response
         if (!fr->resp) {

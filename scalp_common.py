@@ -25,9 +25,9 @@ class State(Scalp):
         'LOCK1': '0x02',
         'LOCK2': '0x03',
         'WAITING': '0x04',
-        'FLIGHT': '0x05',
+        'THRUSTING': '0x05',
         'BALISTIC': '0x06',
-        'WINDOW_BEGIN': '0x07',
+        'DETECTION': '0x07',
         'OPEN_SEQ': '0x08',
         'BRAKE': '0x09',
         'UNLOCK': '0x0a',
@@ -61,20 +61,22 @@ class Led(Scalp):
     """
     set/get led blink rate
     argv #0 value :
-        - 0xa1 : alive
-        - 0x09 : open
+        - 0xa1 : alive (green)
+        - 0x51 : signal (blue)
+        - 0xe4 : error (red)
     argv #1 value :
         - 0x00 : set
         - 0xff : get
     argv #2 value :
-        - 0xVV : low duration [0.00; 2.55] s
+        - 0xVV : low duration [0.0; 12.7] s
     argv #3 value :
-        - 0xVV : high duration [0.00; 2.55] s
+        - 0xVV : high duration [0.0; 12.7] s
     """
 
     defines = {
         'ALIVE': '0xa1',
         'SIGNAL': '0x51',
+        'ERROR': '0xe4',
         'SET': '0x00',
         'GET': '0xff',
     }

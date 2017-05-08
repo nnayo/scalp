@@ -5,26 +5,6 @@ set of scalps for the basic component
 from scalp_frame import Scalp
 
 
-class Null(Scalp):
-    """
-    no command
-    no arg
-    """
-
-    def __str__(self):
-        dest = self._dest_str()
-        orig = self._orig_str()
-        t_id = self._t_id_str()
-        status = self._status_str()
-
-        return 'Null(%s, %s, %s, %s)' % (
-                    dest,
-                    orig,
-                    t_id,
-                    status,
-                )
-
-
 class TwiRead(Scalp):
     """
     raw I2C read
@@ -41,91 +21,91 @@ class TwiWrite(Scalp):
     """
 
 
-class RamRead(Scalp):
-    """
-    RAM read
-    argv #0, #1 :
-        - RAM address to read (MSB first)
-    argv #2 :
-        - read data at address
-    argv #3 :
-        - read data at address + 1 octet
-    """
-
-
-class RamWrite(Scalp):
-    """
-    RAM write
-    argv #0, #1 :
-        - RAM address to write (MSB first)
-    argv #2, #3 :
-        - in cmde, data to be written
-        - in resp, data read back
-    """
-
-
-class EepRead(Scalp):
-    """
-    EEPROM read
-    argv #0, #1 :
-        - RAM address to read (MSB first)
-    argv #2 :
-        - read data at address
-    argv #3 :
-        - read data at address + 1 octet
-    """
-
-
-class EepWrite(Scalp):
-    """
-    EEPROM write
-    argv #0, #1 :
-        - RAM address to write (MSB first)
-    argv #2, #3 :
-        - in cmde, data to be written
-        - in resp, data read back
-    """
-
-
-class FlhRead(Scalp):
-    """
-    FLASH read
-    argv #0, #1 :
-        - FLASH address to read (MSB first)
-    argv #2 :
-        - read data at address
-    argv #3 :
-        - read data at address + 1 octet
-    """
-
-
-class FlhWrite(Scalp):
-    """
-    FLASH write (possibly implemented)
-    argv #0, #1 :
-        - RAM address to write (MSB first)
-    argv #2, #3 :
-        - in cmde, data to be written
-        - in resp, data read back
-    """
-
-
-class SpiRead(Scalp):
-    """
-    SPI read
-    status.len : number of octets to be read
-    argv #0-... : used if necessary
-    """
-
-
-class SpiWrite(Scalp):
-    """
-    SPI write
-    status.len : number of octets to be written
-    argv #0-... : used if necessary
-    """
-
-
+#class RamRead(Scalp):
+#    """
+#    RAM read
+#    argv #0, #1 :
+#        - RAM address to read (MSB first)
+#    argv #2 :
+#        - read data at address
+#    argv #3 :
+#        - read data at address + 1 octet
+#    """
+#
+#
+#class RamWrite(Scalp):
+#    """
+#    RAM write
+#    argv #0, #1 :
+#        - RAM address to write (MSB first)
+#    argv #2, #3 :
+#        - in cmde, data to be written
+#        - in resp, data read back
+#    """
+#
+#
+#class EepRead(Scalp):
+#    """
+#    EEPROM read
+#    argv #0, #1 :
+#        - RAM address to read (MSB first)
+#    argv #2 :
+#        - read data at address
+#    argv #3 :
+#        - read data at address + 1 octet
+#    """
+#
+#
+#class EepWrite(Scalp):
+#    """
+#    EEPROM write
+#    argv #0, #1 :
+#        - RAM address to write (MSB first)
+#    argv #2, #3 :
+#        - in cmde, data to be written
+#        - in resp, data read back
+#    """
+#
+#
+#class FlhRead(Scalp):
+#    """
+#    FLASH read
+#    argv #0, #1 :
+#        - FLASH address to read (MSB first)
+#    argv #2 :
+#        - read data at address
+#    argv #3 :
+#        - read data at address + 1 octet
+#    """
+#
+#
+#class FlhWrite(Scalp):
+#    """
+#    FLASH write (possibly implemented)
+#    argv #0, #1 :
+#        - RAM address to write (MSB first)
+#    argv #2, #3 :
+#        - in cmde, data to be written
+#        - in resp, data read back
+#    """
+#
+#
+#class SpiRead(Scalp):
+#    """
+#    SPI read
+#    status.len : number of octets to be read
+#    argv #0-... : used if necessary
+#    """
+#
+#
+#class SpiWrite(Scalp):
+#    """
+#    SPI write
+#    status.len : number of octets to be written
+#    argv #0-... : used if necessary
+#    """
+#
+#
 class Wait(Scalp):
     """
     wait some time given in ms
@@ -146,64 +126,48 @@ class Wait(Scalp):
 
         return argv
 
-    def __str__(self):
-        dest = self._dest_str()
-        orig = self._orig_str()
-        t_id = self._t_id_str()
-        status = self._status_str()
+    def _argv_str(self):
+        return '%d ms)' % self._delay
 
-        return 'Wait(%s, %s, %s, %s, %d ms)' % (
-                    dest,
-                    orig,
-                    t_id,
-                    status,
-                    self._delay
-                )
 
 class Container(Scalp):
     """
-    encapsulated several other frames used for event handling
+    encapsulated several other scalps used for event handling
     argv #0-1 value :
-        - offset in memory for the first encapsulated frame (MSB first)
+        - offset in memory for the first encapsulated scalp (MSB first)
     argv #2 value :
-        - 0xVV : nb encapsulated frames
+        - 0xVV : nb encapsulated scalps or predefined slot
     argv #3 memory type or container number in eeprom:
-        - 0x00-0x09 : predefined eeprom container \
-        (in this case the other parameters are useless)
-        - 0xee eeprom,
-        - 0xff flash,
-        - 0xaa ram,
+        - 0xee : eeprom,
+        - 0xff : flash,
+        - 0xaa : ram,
+        - 0x4e : predefined eeprom container (in this case the offset is useless)
     """
 
     # storage memory type
-    PRE_0 = 0x00
-    PRE_1 = 0x01
-    PRE_2 = 0x02
-    PRE_3 = 0x03
-    PRE_4 = 0x04
-    PRE_5 = 0x05
-    PRE_6 = 0x06
-    PRE_7 = 0x07
-    PRE_8 = 0x08
-    PRE_9 = 0x09
     RAM = 0xaa
     EEPROM = 0xee
     FLASH = 0xff
+    PRE_DEF = 0x4e
 
     defines = {
-        'PRE_0_STORAGE': '0x00',
-        'PRE_1_STORAGE': '0x01',
-        'PRE_2_STORAGE': '0x02',
-        'PRE_3_STORAGE': '0x03',
-        'PRE_4_STORAGE': '0x04',
-        'PRE_5_STORAGE': '0x05',
-        'PRE_6_STORAGE': '0x06',
-        'PRE_7_STORAGE': '0x07',
-        'PRE_8_STORAGE': '0x08',
-        'PRE_9_STORAGE': '0x09',
         'RAM_STORAGE': '0xaa',
         'EEPROM_STORAGE': '0xee',
         'FLASH_STORAGE': '0xff',
+        'PRE_DEF_STORAGE': '0x4e',
     }
 
+    def _argv_str(self):
+        addr = 'addr=0x%02x%02x' % (self.argv[0], self.argv[1])
+        nb_scalps = 'nb=%d' % self.argv[2]
+        container_type = 'unknown type'
+        for cont_type, cont_val in self.defines.items():
+            cont_val = int(cont_val, 16)
+            if self.argv[3] == cont_val:
+                container_type = cont_type.lower()
+                break
 
+        if 'pre_def' in container_type:
+            return container_type + ' #%d' % nb_scalps
+        else:
+            return '%s, %s, %s' % (container_type, addr, nb_scalps)

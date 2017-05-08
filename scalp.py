@@ -7,10 +7,16 @@ generate the .c and .h files from scalp descriptions
 import sys
 import importlib
 import inspect
-import os
+
+
+class ScalpsError(Exception):
+    """scalp exception"""
+    pass
 
 
 class Scalps(object):
+    """scalp collector"""
+
     descritions = [
         'scalp_basic',
         'scalp_common',
@@ -40,8 +46,8 @@ class Scalps(object):
         """extract the scalps of the module"""
         # filter classes of interest
         klass = [k for k in mod.__dict__.values() if inspect.isclass(k)]
-        klass = [k for k in klass if issubclass(k, self.scalp_class) 
-                                    and k != self.scalp_class]
+        klass = [k for k in klass if issubclass(k, self.scalp_class)
+                                     and k != self.scalp_class]
 
         # ensure the classes are always listed in the same order
         klass.sort(key=lambda x: x.__name__)
@@ -52,6 +58,9 @@ class Scalps(object):
             k.cmde = cmde_id
             cmde_id += 1
             self._scalps.update({k.__name__: k})
+
+            if cmde_id == 32:
+                raise ScalpsError('too many scalps')
 
     def append(self, scalp_file):
         """append the scalps of the given module"""
@@ -89,7 +98,7 @@ class Scalps(object):
             sorted_vals = [k for k in frm.defines.items()]
             sorted_vals.sort(key=lambda x: x[1])
             for k,v  in sorted_vals:
-                h.write('# define SCALP_%s_%s\t%s\n'
+                h.write('# define SCALP_%s_%s        %s\n'
                         % (frm_name[:4], k.strip(), v.strip())
                         )
 
@@ -100,7 +109,7 @@ class Scalps(object):
         h = self._h_file
 
         # extract command name in uppercase
-        h.write('\tSCALP_%s = 0x%02x,\n' % (frm.__name__.upper(), frm.cmde))
+        h.write('        SCALP_%s = 0x%02x,\n' % (frm.__name__.upper(), frm.cmde))
 
         # if a doc is provided, use it
         if frm.__doc__:
@@ -111,10 +120,10 @@ class Scalps(object):
             for l in lines:
                 l = l.strip()
                 if len(l):
-                    h.write('\t// %s\n' % l)
+                    h.write('        // %s\n' % l)
 
         else:
-            h.write('\t// description missing, please add one !!!!\n')
+            h.write('        // description missing, please add one !!!!\n')
 
         h.write('\n')
 
@@ -134,15 +143,15 @@ class Scalps(object):
         h.write('//\n')
         h.write('\n')
         h.write('// number of arguments for each scalp\n')
-        h.write('# define SCALP_NB_ARGS\t%d\n' % self.scalp_class.nb_args)
+        h.write('# define SCALP_NB_ARGS        %d\n' % self.scalp_class.nb_args)
         h.write('\n')
         h.write('// fields offsets\n')
-        h.write('# define SCALP_DEST_OFFSET\t0\n')
-        h.write('# define SCALP_ORIG_OFFSET\t1\n')
-        h.write('# define SCALP_T_ID_OFFSET\t2\n')
-        h.write('# define SCALP_CMDE_OFFSET\t3\n')
-        h.write('# define SCALP_STAT_OFFSET\t4\n')
-        h.write('# define SCALP_ARGV_OFFSET\t5\n')
+        h.write('# define SCALP_DEST_OFFSET        0\n')
+        h.write('# define SCALP_ORIG_OFFSET        1\n')
+        h.write('# define SCALP_T_ID_OFFSET        2\n')
+        h.write('# define SCALP_CMDE_OFFSET        3\n')
+        h.write('# define SCALP_STAT_OFFSET        4\n')
+        h.write('# define SCALP_ARGV_OFFSET        5\n')
         h.write('\n')
         # if some commands needs particular defines
         for fr in self._scalps.values():
@@ -166,33 +175,34 @@ class Scalps(object):
 
         h.write('// scalp format (header + arguments)\n')
         h.write('struct scalp {\n')
-        h.write('\tu8 dest;\t\t\t\t// message destination\n')
-        h.write('\tu8 orig;\t\t\t\t// message origin\n')
-        h.write('\tu8 t_id;\t\t\t\t// transaction identifier\n')
-        h.write('\tenum scalp_cmde cmde;\t\t// message command\n')
-        h.write('\tunion {\n')
-        h.write('\t\tu8 status;\t\t\t// status field\n')
-        h.write('\t\tstruct {\t\t\t// and its sub-parts\n')
-        h.write('\t\t\tu8 error:1;\t\t// error flag\n')
-        h.write('\t\t\tu8 resp:1;\t\t// response flag\n')
-        h.write('\t\t\tu8 time_out:1;\t// time-out flag\n')
-        h.write('\t\t\tu8 len:3;\t// length / number of arguments\n')
-        h.write('\t\t};\n')
-        h.write('\t};\n')
-        h.write('\tu8 argv[SCALP_NB_ARGS];\t// msg command argument(s) if any\n')
+        h.write('        u8 dest;                       // message destination\n')
+        h.write('        u8 orig;                       // message origin\n')
+        h.write('        u8 t_id;                       // transaction identifier\n')
+        h.write('        enum scalp_cmde cmde;          // message command\n')
+        h.write('        union {\n')
+        h.write('                u8 status;             // status field\n')
+        h.write('                struct {               // and its sub-parts\n')
+        h.write('                        u8 len:3;      // length / number of arguments (LSB)\n')
+        h.write('                        u8 reserved:2; // reserved field\n')
+        h.write('                        u8 time_out:1; // time-out flag\n')
+        h.write('                        u8 resp:1;     // response flag\n')
+        h.write('                        u8 error:1;    // error flag (MSB)\n')
+        h.write('                };\n')
+        h.write('        };\n')
+        h.write('        u8 argv[SCALP_NB_ARGS];        // msg command argument(s) if any\n')
         h.write('};\n')
         h.write('\n')
         h.write('\n')
         for i in range(self.scalp_class.nb_args + 1):
             h.write(
                 'extern u8 scalp_set_%d('
-                'struct scalp* fr, u8 dest, u8 orig, enum scalp_cmde cmde, u8 len' % i)
+                'struct scalp* fr, u8 dest, u8 orig, enum scalp_cmde cmde' % i)
             for j in range(i):
                 h.write(', u8 argv%d' % j)
             h.write(');\n')
             h.write('\n')
         h.write('\n')
-        h.write('#endif\t// __%s__\n' % def_name)
+        h.write('#endif        // __%s__\n' % def_name)
 
     def _generate_c(self):
         c = self._c_file
@@ -203,20 +213,20 @@ class Scalps(object):
         for i in range(self.scalp_class.nb_args + 1):
             c.write(
                 'u8 scalp_set_%d('
-                'struct scalp* fr, u8 dest, u8 orig, enum scalp_cmde cmde, u8 len' % i)
+                'struct scalp* fr, u8 dest, u8 orig, enum scalp_cmde cmde' % i)
             for j in range(i):
                 c.write(', u8 argv%d' % j)
             c.write(')\n')
             c.write('{\n')
-            c.write('\tfr->dest = dest;\n')
-            c.write('\tfr->orig = orig;\n')
-            c.write('\tfr->cmde = cmde;\n')
-            c.write('\tfr->status = 0;\n')
-            c.write('\tfr->len = len;\n')
+            c.write('        fr->dest = dest;\n')
+            c.write('        fr->orig = orig;\n')
+            c.write('        fr->cmde = cmde;\n')
+            c.write('        fr->status = 0;\n')
+            c.write('        fr->len = %d;\n' % i)
             for j in range(i):
-                c.write('\tfr->argv[%d] = argv%d;\n' % (j, j))
+                c.write('        fr->argv[%d] = argv%d;\n' % (j, j))
             c.write('\n')
-            c.write('\treturn OK;\n')
+            c.write('        return OK;\n')
             c.write('}\n')
             c.write('\n')
             c.write('\n')
@@ -235,16 +245,19 @@ class Scalps(object):
 
 def test(desc):
     """very basic display test"""
+    import scalp_frame
+
     dest = 0x00
     orig = 0x01
     t_id = None
     cmde = 0x01
-    status = Scalp.RESP | Scalp.TIME_OUT
+    status = scalp_frame.Scalp.RESP | scalp_frame.Scalp.TIME_OUT
     args = (7, 8, 9, 10, 11)
 
     print('small test:')
-    f = desc.scalp(dest, orig, t_id, cmde, status, *args)
-    print('\t%s' % f)
+    sclp = desc.scalp(dest, orig, t_id, cmde, status, *args)
+    print('        %s' % sclp.to_colored_string())
+    print('        %r' % sclp)
 
 
 def usage():

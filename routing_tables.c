@@ -210,10 +210,10 @@ void scalp_route_init(void)
 
 	// register to dispatcher
 	route.interf.channel = 9;
-	route.interf.cmde_mask = _CM(SCALP_ROUTELIST)
-                                | _CM(SCALP_ROUTELINE)
-                                | _CM(SCALP_ROUTEADD)
-                                | _CM(SCALP_ROUTEDEL);
+	route.interf.cmde_mask = SCALP_DPT_CM(SCALP_ROUTELIST)
+                               | SCALP_DPT_CM(SCALP_ROUTELINE)
+                               | SCALP_DPT_CM(SCALP_ROUTEADD)
+                               | SCALP_DPT_CM(SCALP_ROUTEDEL);
 	route.interf.queue = &route.in_fifo;
 	scalp_dpt_register(&route.interf);
 }
